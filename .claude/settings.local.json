@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip handoff-package.zip -d handoff_contents)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --use-npm)",
+      "Read(//c/Users/jonat/Claude_Projects/**)",
+      "Bash(npx create-next-app@latest saleslord-scaffold --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --use-npm --yes)"
+    ]
+  }
+}
