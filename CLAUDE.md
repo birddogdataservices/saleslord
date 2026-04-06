@@ -47,7 +47,7 @@ See `.env.local.example` for the full reference.
 ├── HANDOFF.md
 ├── BACKLOG.md
 ├── proxy.ts                    # Next.js 16 proxy (auth gate + access control)
-├── vercel.json                 # Cron config
+├── vercel.json                 # Cron config — Monday 6am /api/cron/refresh-all
 ├── .env.local.example
 ├── supabase/
 │   └── schema.sql              # Source of truth for DB schema
@@ -61,6 +61,7 @@ See `.env.local.example` for the full reference.
 │   │   └── admin.ts            # Service role client — API routes ONLY
 │   ├── types.ts                # All DB row types + composite view types
 │   ├── slop.ts                 # SLOP_PHRASES list + detectSlop()
+│   ├── crypto.ts               # encryptApiKey / decryptApiKey — AES-256-GCM
 │   └── utils.ts                # cn(), calculateCost(), ROLE_COLORS, windowStatusColor()
 ├── app/
 │   ├── layout.tsx              # Root layout (Toaster, fonts)
@@ -71,7 +72,10 @@ See `.env.local.example` for the full reference.
 │   └── (app)/                  # Auth-gated group layout (sidebar + main)
 │       ├── layout.tsx          # Fetches sidebar data, renders Sidebar + {children}
 │       ├── page.tsx            # Redirects to first prospect or /setup
-│       ├── setup/              # Rep profile setup page (multi-product)
+│       ├── setup/              # Rep profile setup page
+│       ├── admin/
+│       │   ├── products/       # Admin CRUD for shared products
+│       │   └── users/          # Admin invite management (allowed_emails)
 │       └── prospects/[id]/     # Full prospect summary page
 ├── components/
 │   ├── ui/                     # shadcn components
@@ -85,8 +89,13 @@ See `.env.local.example` for the full reference.
 │       ├── ProspectLog.tsx     # Filterable note log with add form
 │       └── RightColumn.tsx     # Outreach readiness, angle, tech, log wrapper
 └── app/api/
-    ├── research/route.ts       # POST — full prospect research (built)
-    ├── follow-up/route.ts      # POST — follow-up touch (to build)
+    ├── research/route.ts       # POST — full prospect research ✅
+    ├── refresh-email/route.ts  # POST — regenerate email draft only ✅
+    ├── profile/
+    │   └── api-key/route.ts    # POST — encrypt + store user Anthropic key ✅
+    ├── admin/
+    │   └── allowed-emails/     # GET + POST + DELETE — invite management ✅
+    ├── export/pdf/[id]/        # GET — PDF brief export ✅
     ├── refresh/route.ts        # POST — re-research one prospect (to build)
     └── cron/refresh-all/       # GET — weekly cron (to build)
 ```
@@ -208,7 +217,16 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 
 ## Next.js 16 notes
 
-- Middleware file is `middleware.ts` at the root; export function must be named `middleware`. (An earlier session mistakenly called this `proxy.ts` with export `proxy` — that was never picked up by Next.js. Fixed in session 4.)
+- Middleware file is `proxy.ts` at the root; export function must be named `proxy`. This is Next.js 16's renamed version of `middleware.ts`. Do NOT create a `middleware.ts` — the build will fail if both exist.
+- **Route handler params are async** — in Next.js 15+, dynamic segment params are `Promise<{ id: string }>` not `{ id: string }`. Always destructure with `await`: `const { id } = await params`. Build will fail on type check if you use the old pattern.
 - All pages using Supabase need `export const dynamic = 'force-dynamic'`
 - App Router — server components fetch data, client components handle interactivity
 - Route handlers live in `app/api/*/route.ts`
+
+## Deployment
+
+- **Live URL**: https://saleslord-theta.vercel.app
+- **GitHub**: https://github.com/birddogdataservices/saleslord
+- **Vercel account**: birddogdataservices (Hobby plan — public repo required)
+- Vercel auto-deploys on every push to `main`
+- Supabase auth redirect URLs must include the Vercel domain in Authentication → URL Configuration

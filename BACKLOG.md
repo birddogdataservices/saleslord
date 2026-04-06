@@ -47,10 +47,10 @@ Items are roughly priority-ordered within each section.
 - [x] Admin UI to add/remove emails from `allowed_emails` table — `/admin/users`
 - [ ] Admin UI to promote/demote other reps to admin (currently requires direct SQL)
 - [ ] Per-user usage dashboard — table of costs by day/endpoint
-- [ ] Option to switch from allowlist to domain-restriction (one `if` change in `proxy.ts`)
+- [ ] Option to switch from allowlist to domain-restriction (one `if` change in `proxy.ts` — Next.js 16 middleware)
 
 ## 🔧 Infrastructure
 
 - [ ] Error boundaries for failed data fetches (prospect page currently has no error state)
 - [ ] 429 rate-limit UI feedback — currently toast shows raw error string; could be friendlier
-- [ ] Vercel deployment configured with all env vars
+- [x] Vercel deployment configured — live at https://saleslord-theta.vercel.app

@@ -89,13 +89,10 @@ where user_id = (select id from auth.users where email = 'jonathan.m.hanson@gmai
 
 ## What's next (priority order)
 
-1. **Run the DB migration** (see below) — required before BYOK works for any user
-2. **`/api/refresh` route** — re-research one prospect, never overwrites timing, diff on brief fields
-3. **Re-research button** wired in topbar
-4. **`/api/cron/refresh-all`** — weekly refresh + Resend digest
-5. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
-
----
+1. **`/api/refresh` route** — re-research one prospect, never overwrites timing, diff on brief fields
+2. **Re-research button** wired in topbar
+3. **`/api/cron/refresh-all`** — weekly refresh + Resend digest (not urgent — cron schedule already in vercel.json)
+4. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
 
 ---
 
@@ -119,11 +116,15 @@ where user_id = (select id from auth.users where email = 'jonathan.m.hanson@gmai
 - `AdminUsersClient` — fetches list on mount, add form (email + optional note), remove button per row, toast feedback, optimistic list update
 - Sidebar — "Manage team →" link added alongside "Manage products →", visible to admins only
 
-**`proxy.ts` → `middleware.ts` (critical fix)**
-- `proxy.ts` was never being picked up by Next.js — auth was not enforced in dev or production
-- Renamed to `middleware.ts`, function renamed from `proxy` to `middleware`
-- `proxy.ts` left in place (inert — can be deleted)
+**`proxy.ts` confirmed correct for Next.js 16**
+- Vercel build error confirmed Next.js 16 uses `proxy.ts` (not `middleware.ts`) — the original was right
+- During this session a `middleware.ts` was briefly created by mistake; build failed with "both files detected"; deleted immediately
 - `vercel.json` created with Monday 6am cron schedule for `/api/cron/refresh-all`
+
+**Deployed to Vercel**
+- Live at https://saleslord-theta.vercel.app
+- Repo: https://github.com/birddogdataservices/saleslord (public, birddogdataservices org)
+- All env vars set in Vercel; Supabase auth URLs configured
 
 ### Required setup before deployment
 
