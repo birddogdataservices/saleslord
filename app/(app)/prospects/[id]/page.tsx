@@ -8,18 +8,22 @@ import NewsCard from '@/components/prospect/NewsCard'
 import DecisionMakers from '@/components/prospect/DecisionMakers'
 import RightColumn from '@/components/prospect/RightColumn'
 import EmailDraftButton from '@/components/prospect/EmailDraftButton'
-import type { ProspectBrief, DecisionMaker, ProspectNote } from '@/lib/types'
+import CheckUpdatesButton from '@/components/prospect/CheckUpdatesButton'
+import UpdateBlurbs from '@/components/prospect/UpdateBlurbs'
+import ReresearchButton from '@/components/prospect/ReresearchButton'
+import type { ProspectBrief, DecisionMaker, ProspectNote, ProspectUpdate } from '@/lib/types'
 
 export default async function ProspectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
   // Fetch all data in parallel
-  const [prospectRes, briefRes, dmsRes, notesRes] = await Promise.all([
+  const [prospectRes, briefRes, dmsRes, notesRes, updatesRes] = await Promise.all([
     supabase.from('prospects').select('*').eq('id', id).single(),
     supabase.from('prospect_briefs').select('*').eq('prospect_id', id).order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('decision_makers').select('*').eq('prospect_id', id).order('sort_order'),
     supabase.from('prospect_notes').select('*').eq('prospect_id', id).order('created_at', { ascending: false }),
+    supabase.from('prospect_updates').select('*').eq('prospect_id', id).order('created_at', { ascending: false }),
   ])
 
   if (!prospectRes.data) notFound()
@@ -28,6 +32,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
   const brief    = briefRes.data as ProspectBrief | null
   const dms      = (dmsRes.data ?? []) as DecisionMaker[]
   const notes    = (notesRes.data ?? []) as ProspectNote[]
+  const updates  = (updatesRes.data ?? []) as ProspectUpdate[]
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -73,18 +78,9 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               Export PDF
             </a>
           )}
-          <button
-            className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium"
-            style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
-          >
-            Re-research
-          </button>
-          <button
-            className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium"
-            style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
-          >
-            Follow-ups
-          </button>
+          {brief && (
+            <CheckUpdatesButton prospectId={id} lastRefreshedAt={prospect.last_refreshed_at} />
+          )}
           {brief?.email && (
             <EmailDraftButton initialEmail={brief.email} prospectId={id} />
           )}
@@ -101,7 +97,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           {/* Stats */}
           {brief?.stats && <StatCards stats={brief.stats} />}
 
-          {/* No brief yet */}
+          {/* No brief yet — offer a direct re-trigger using the stored query */}
           {!brief && (
             <div
               className="rounded-[10px] px-6 py-8 text-center"
@@ -109,10 +105,14 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
             >
               <p className="text-[13px] font-medium" style={{ color: 'var(--sl-text)' }}>No research yet</p>
               <p className="text-[12px] mt-1" style={{ color: 'var(--sl-text2)' }}>
-                Use the "Add prospect" input in the sidebar to run research on this company.
+                Research may still be running, or it was interrupted. You can run it again below.
               </p>
+              <ReresearchButton query={prospect.query} />
             </div>
           )}
+
+          {/* Update blurbs — freshest intel on top, above original brief */}
+          {updates.length > 0 && <UpdateBlurbs updates={updates} />}
 
           {brief && (
             <div className="grid gap-[14px]" style={{ gridTemplateColumns: '1fr 340px' }}>

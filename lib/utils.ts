@@ -51,6 +51,27 @@ export const ROLE_LABELS: Record<DmRole, string> = {
 // ─────────────────────────────────────────
 // Timing window helpers
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// Compute window_status live from fy_end string (e.g. "January 31")
+// Rather than reading the stored value (which goes stale), we derive it fresh on each render.
+// open:       90–150 days before FY end  (budget planning window)
+// approaching: 150–210 days before FY end (get on the radar)
+// closed:     everything else
+// ─────────────────────────────────────────
+export function computeWindowStatus(fyEnd: string): 'open' | 'approaching' | 'closed' {
+  try {
+    const now  = new Date()
+    const year = now.getFullYear()
+    let target = new Date(`${fyEnd} ${year}`)
+    if (isNaN(target.getTime())) return 'closed'
+    if (target <= now) target.setFullYear(year + 1)
+    const days = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    if (days >= 90 && days <= 150) return 'open'
+    if (days > 150 && days <= 210) return 'approaching'
+    return 'closed'
+  } catch { return 'closed' }
+}
+
 export function windowStatusLabel(status: 'open' | 'approaching' | 'closed' | null): string {
   if (!status) return 'Unknown'
   return { open: 'Buy window open', approaching: 'Approaching', closed: 'Monitoring' }[status]

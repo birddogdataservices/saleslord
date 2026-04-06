@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/prospect/Sidebar'
 import type { ProspectSidebarItem } from '@/lib/types'
+import { computeWindowStatus } from '@/lib/utils'
 
 // Fetches sidebar data (all prospects + monthly cost) once per layout render.
 // Child pages (prospect detail, setup) render inside the {children} slot.
@@ -55,7 +56,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       id:               p.id,
       name:             p.name,
       last_refreshed_at: p.last_refreshed_at,
-      window_status:    timing?.window_status ?? null,
+      // Compute window_status live — stored value goes stale as time passes
+      window_status:    timing?.fy_end ? computeWindowStatus(timing.fy_end) : null,
       fy_end:           timing?.fy_end
                           ? new Date(`${timing.fy_end} 2000`).toLocaleString('en-US', { month: 'short' })
                           : null,

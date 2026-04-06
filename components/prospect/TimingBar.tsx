@@ -1,5 +1,5 @@
 import type { TimingData } from '@/lib/types'
-import { windowStatusColor, windowStatusLabel } from '@/lib/utils'
+import { windowStatusColor, windowStatusLabel, computeWindowStatus } from '@/lib/utils'
 
 type Props = { timing: TimingData }
 
@@ -14,17 +14,18 @@ function daysUntil(fyEnd: string): number | null {
 }
 
 export default function TimingBar({ timing }: Props) {
-  const { pill } = windowStatusColor(timing.window_status)
-  const days     = daysUntil(timing.fy_end)
+  // Compute window_status live from fy_end — stored value may be stale if set months ago
+  const windowStatus = computeWindowStatus(timing.fy_end)
+  const days         = daysUntil(timing.fy_end)
   const pillColor =
-    timing.window_status === 'open'       ? { bg: 'var(--sl-green-bg)',  text: 'var(--sl-green-t)'  } :
-    timing.window_status === 'approaching'? { bg: 'var(--sl-amber-bg)',  text: 'var(--sl-amber-t)'  } :
-                                            { bg: 'var(--sl-coral-bg)',  text: 'var(--sl-coral-t)'  }
+    windowStatus === 'open'        ? { bg: 'var(--sl-green-bg)',  text: 'var(--sl-green-t)'  } :
+    windowStatus === 'approaching' ? { bg: 'var(--sl-amber-bg)',  text: 'var(--sl-amber-t)'  } :
+                                     { bg: 'var(--sl-coral-bg)',  text: 'var(--sl-coral-t)'  }
 
   const borderColor =
-    timing.window_status === 'open'        ? 'var(--sl-green-bg)'  :
-    timing.window_status === 'approaching' ? 'var(--sl-amber-bg)'  :
-                                             'var(--sl-coral-bg)'
+    windowStatus === 'open'        ? 'var(--sl-green-bg)'  :
+    windowStatus === 'approaching' ? 'var(--sl-amber-bg)'  :
+                                     'var(--sl-coral-bg)'
 
   return (
     <div
@@ -35,7 +36,7 @@ export default function TimingBar({ timing }: Props) {
         className="text-[11px] font-semibold px-3 py-1 rounded-full flex-shrink-0"
         style={{ background: pillColor.bg, color: pillColor.text }}
       >
-        {windowStatusLabel(timing.window_status)}
+        {windowStatusLabel(windowStatus)}
       </span>
 
       <Div />
@@ -46,7 +47,7 @@ export default function TimingBar({ timing }: Props) {
       <TItem
         label="Days to FY close"
         value={days != null ? `${days} days` : '—'}
-        valueColor={timing.window_status === 'open' ? 'var(--sl-green-t)' : undefined}
+        valueColor={windowStatus === 'open' ? 'var(--sl-green-t)' : undefined}
       />
       <Div />
       <p

@@ -36,23 +36,28 @@ export async function POST(request: Request) {
   const { prospect_id } = await request.json() as { prospect_id?: string }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
-  // 4. Fetch prospect, brief, rep profile, products in parallel
-  const [prospectRes, briefRes, profileRes, productRes] = await Promise.all([
+  // 4. Fetch prospect, brief, rep profile, products, and most recent update blurb in parallel
+  const [prospectRes, briefRes, profileRes, productRes, latestUpdateRes] = await Promise.all([
     adminClient.from('prospects').select('*').eq('id', prospect_id).single(),
     adminClient.from('prospect_briefs').select('*').eq('prospect_id', prospect_id)
       .order('created_at', { ascending: false }).limit(1).single(),
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     adminClient.from('products').select('name, description, value_props, competitors')
       .order('created_at', { ascending: true }),
+    // Most recent update blurb — used to freshen the email context if available
+    adminClient.from('prospect_updates').select('summary, news_items, created_at')
+      .eq('prospect_id', prospect_id)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   if (!prospectRes.data) return Response.json({ error: 'Prospect not found' }, { status: 404 })
   if (!briefRes.data)    return Response.json({ error: 'No brief found — run research first' }, { status: 404 })
 
-  const prospect = prospectRes.data
-  const brief    = briefRes.data
-  const profile  = profileRes.data
+  const prospect    = prospectRes.data
+  const brief       = briefRes.data
+  const profile     = profileRes.data
   const products: ProductPromptContext[] = productRes.data ?? []
+  const latestUpdate = latestUpdateRes.data ?? null
 
   // BYOK hard gate — decrypt stored key; no platform fallback
   const storedKey = profile?.anthropic_api_key?.trim()
@@ -95,13 +100,18 @@ ${EMAIL_RULES}
 Return ONLY valid JSON, no markdown, no preamble:
 {"subject": "string", "body": "string"}`
 
+  // Include most recent update blurb if available — this is the freshest intel on the prospect
+  const latestUpdateContext = latestUpdate
+    ? `\nLatest update (${new Date(latestUpdate.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}): ${latestUpdate.summary}`
+    : ''
+
   const companyContext = `Company: ${prospect.name}
 Snapshot: ${brief.snapshot ?? 'not available'}
 Strategic initiatives: ${(brief.initiatives ?? []).join('; ') || 'none'}
 Pain signals: ${(brief.pain_signals ?? []).join('; ') || 'none'}
 Outreach angle: ${brief.outreach_angle ?? 'not available'}
 Recent news: ${(brief.news ?? []).slice(0, 3).map((n: any) => `${n.date}: ${n.text}`).join(' | ') || 'none'}
-Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
+Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateContext}`
 
   // 6. Generate — no tools, text only
   const client   = new Anthropic({ apiKey: userApiKey })

@@ -196,7 +196,12 @@ export async function POST(request: Request) {
   })
 
   // Agentic loop — handle multiple web search tool calls
-  while (response.stop_reason === 'tool_use') {
+  // Cap at 7 iterations to stay well under Vercel's 300s function timeout.
+  // The model typically needs 4–6 searches for a thorough brief.
+  const MAX_SEARCH_ITERATIONS = 7
+  let iterations = 0
+  while (response.stop_reason === 'tool_use' && iterations < MAX_SEARCH_ITERATIONS) {
+    iterations++
     messages.push({ role: 'assistant', content: response.content })
 
     const toolResults = response.content
@@ -284,10 +289,9 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Failed to save prospect' }, { status: 500 })
   }
 
-  // Delete existing brief (one active brief per prospect)
-  await adminClient.from('prospect_briefs').delete().eq('prospect_id', prospect.id)
-
-  // Insert new brief
+  // Insert new brief FIRST — if the process dies before the old one is deleted,
+  // the page query (order by created_at desc, limit 1) will serve the new brief.
+  // The orphaned old brief is cleaned up on the next research run.
   const stats: CompanyStats = parsed.stats ?? { revenue: null, headcount: null, open_roles: null, stage: null }
   const { data: brief, error: briefError } = await adminClient
     .from('prospect_briefs')
@@ -311,8 +315,16 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Failed to save brief' }, { status: 500 })
   }
 
-  // Delete existing decision makers and insert fresh
-  await adminClient.from('decision_makers').delete().eq('prospect_id', prospect.id)
+  // Now delete any older briefs for this prospect (keep only the one we just inserted)
+  await adminClient.from('prospect_briefs').delete()
+    .eq('prospect_id', prospect.id)
+    .neq('id', brief.id)
+
+  // Snapshot existing DM ids before inserting new ones, then delete after —
+  // same insert-first pattern: new DMs are visible immediately if process dies mid-cleanup
+  const { data: existingDMs } = await adminClient
+    .from('decision_makers').select('id').eq('prospect_id', prospect.id)
+  const existingDMIds = (existingDMs ?? []).map(d => d.id)
 
   const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
     champion:       { bg: '#E1F5EE', text: '#085041' },
@@ -344,6 +356,11 @@ export async function POST(request: Request) {
   if (decisionMakers.length > 0) {
     const { error: dmError } = await adminClient.from('decision_makers').insert(decisionMakers)
     if (dmError) console.error('[research] Decision maker insert error:', dmError)
+  }
+
+  // Delete old DMs now that new ones are safely written
+  if (existingDMIds.length > 0) {
+    await adminClient.from('decision_makers').delete().in('id', existingDMIds)
   }
 
   // Update last_refreshed_at on prospect

@@ -204,6 +204,27 @@ create policy "Admins delete products"
   );
 
 -- ─────────────────────────────────────────
+-- Prospect updates (check-for-updates blurb history)
+-- One row per "Check for Updates" run that found relevant intel.
+-- Sorted descending — freshest intel on top. Never overwrites the original brief.
+-- ─────────────────────────────────────────
+create table prospect_updates (
+  id           uuid primary key default gen_random_uuid(),
+  prospect_id  uuid references prospects(id) on delete cascade not null,
+  user_id      uuid references auth.users not null,
+  summary      text not null,          -- 2–3 sentence blurb: what changed and why it matters
+  news_items   jsonb default '[]',     -- {date, text, source, url}[] new items found; sorted desc
+  created_at   timestamptz default now()
+);
+alter table prospect_updates enable row level security;
+create policy "Users access updates via prospect"
+  on prospect_updates for all
+  using (exists (
+    select 1 from prospects p
+    where p.id = prospect_id and p.user_id = auth.uid()
+  ));
+
+-- ─────────────────────────────────────────
 -- Indexes
 -- ─────────────────────────────────────────
 create index on products           (created_at asc);
@@ -213,3 +234,4 @@ create index on follow_ups         (prospect_id, touch_num asc);
 create index on decision_makers    (prospect_id, sort_order asc);
 create index on api_usage          (user_id, created_at desc);
 create index on api_usage          (user_id, created_at desc) where endpoint != 'cron';
+create index on prospect_updates   (prospect_id, created_at desc);

@@ -126,11 +126,20 @@ export type FollowUp = {
   created_at: string
 }
 
+export type ProspectUpdate = {
+  id: string
+  prospect_id: string
+  user_id: string
+  summary: string        // 2–3 sentence blurb of what changed and why it matters
+  news_items: NewsItem[] // new items found; same shape as brief news
+  created_at: string
+}
+
 export type ApiUsage = {
   id: string
   user_id: string
   prospect_id: string | null
-  endpoint: 'research' | 'follow-up' | 'refresh' | 'email' | 'cron'
+  endpoint: 'research' | 'follow-up' | 'refresh' | 'email' | 'cron' | 'check-updates'
   model: string
   input_tokens: number
   output_tokens: number
