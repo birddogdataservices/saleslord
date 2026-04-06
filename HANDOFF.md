@@ -87,12 +87,69 @@ where user_id = (select id from auth.users where email = 'jonathan.m.hanson@gmai
 
 ---
 
+---
+
+## Session 5 summary (Check for Updates, crash recovery, timeout fix)
+
+### Completed
+
+**Check for Updates (replaces Re-research)**
+- Design decision: don't overwrite the brief on "refresh" — append blurbs instead. Freshest intel on top, original brief preserved below.
+- `prospect_updates` table — one row per check-for-updates run that found relevant intel. `summary` (text), `news_items` (jsonb), `created_at`. RLS via prospect ownership.
+- `POST /api/check-updates` — narrow web search call. Passes existing news items + last-checked date to the model for deduplication. Returns `{ found: false }` (no blurb written) if no relevant new intel. Always logs cost to `api_usage`.
+- `UpdateBlurbs` component — renders blurb history sorted freshest-first. Each card shows checked date, summary, expandable news items.
+- `CheckUpdatesButton` — client component with loading/spinner, toast feedback, `router.refresh()`. Shows last-checked date as tooltip. Hidden until brief exists.
+- Follow-ups button removed from topbar.
+
+**window_status computed live**
+- `computeWindowStatus(fyEnd: string)` added to `lib/utils.ts` — pure date math, no stored value.
+- `TimingBar` and sidebar layout both use `computeWindowStatus(timing.fy_end)` instead of reading `timing.window_status` from DB. Stored value was going stale as months passed.
+- Thresholds: open = 90–150 days before FY end, approaching = 150–210 days, closed = everything else.
+
+**Crash recovery for research**
+- Research route previously did delete-then-insert for brief and DMs. A crash between delete and insert left a prospect with no brief and no way to re-trigger from the page.
+- Fixed: insert-first for both brief and DMs. New row is live immediately; old rows are deleted after. Orphaned rows from a crash are cleaned up on the next research run.
+- `ReresearchButton` — client component on the empty brief state. Uses stored `prospect.query` to re-trigger research without the user retyping. Message updated to "Research may still be running, or it was interrupted."
+
+**Vercel function timeout fixes**
+- Agentic loop was unbounded — model could make 10–15 web search calls, each 20–40s, exceeding Vercel's 300s limit.
+- Capped at 3 iterations for both research and check-updates routes.
+- Added explicit `maxDuration` per route in `vercel.json` (60s for research/check-updates, 30s for refresh-email).
+- Verified: research now completes within limit.
+
+**Email draft improvement**
+- `/api/refresh-email` now fetches the most recent update blurb and injects it into the company context. Email drafts reflect the freshest available intel.
+
+### Supabase migration run this session
+```sql
+create table prospect_updates (
+  id           uuid primary key default gen_random_uuid(),
+  prospect_id  uuid references prospects(id) on delete cascade not null,
+  user_id      uuid references auth.users not null,
+  summary      text not null,
+  news_items   jsonb default '[]',
+  created_at   timestamptz default now()
+);
+alter table prospect_updates enable row level security;
+create policy "Users access updates via prospect"
+  on prospect_updates for all
+  using (exists (
+    select 1 from prospects p
+    where p.id = prospect_id and p.user_id = auth.uid()
+  ));
+create index on prospect_updates (prospect_id, created_at desc);
+```
+
+### Architecture decisions
+- **Append-only updates instead of overwriting briefs** — the original brief is stable; each "Check for Updates" call appends a blurb if relevant. Cheaper, preserves history, and lets reps see what changed over time.
+- **window_status is derived, not stored** — the stored `window_status` in `timing` jsonb is now ignored by the UI. It's still written during research for potential future use but `computeWindowStatus()` is the source of truth everywhere.
+- **3 search iterations max** — Vercel's serverless timeout is the hard constraint. 3 calls ≈ 30–45s execution, leaving headroom. If brief quality suffers, the right fix is a background job pattern (Inngest), not raising the cap.
+
 ## What's next (priority order)
 
-1. **`/api/refresh` route** — re-research one prospect, never overwrites timing, diff on brief fields
-2. **Re-research button** wired in topbar
-3. **`/api/cron/refresh-all`** — weekly refresh + Resend digest (not urgent — cron schedule already in vercel.json)
-4. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
+1. **`/api/cron/refresh-all`** — weekly refresh + Resend digest (not urgent — cron schedule already in vercel.json)
+2. **Background job pattern** — if research quality at 3 iterations proves insufficient, move to Inngest or similar to remove the serverless timeout constraint
+3. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
 
 ---
 

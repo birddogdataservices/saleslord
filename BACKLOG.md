@@ -12,8 +12,7 @@ Items are roughly priority-ordered within each section.
 
 ## 🟡 Should have (product is awkward without these)
 
-- [ ] `/api/refresh` route — re-research single prospect, diff logic, never overwrites timing, logs api_usage
-- [ ] Re-research button wired in topbar → `/api/refresh`
+- [x] Check for Updates — `POST /api/check-updates`, append-only blurb history, `UpdateBlurbs` component, `CheckUpdatesButton` in topbar
 - [ ] `/api/cron/refresh-all` route — weekly refresh for all users, Resend digest
 - [ ] Vercel cron wired (`vercel.json` already has the schedule)
 - [ ] Product selector in "Add prospect" flow — when multiple products exist, let rep pick which to research against
@@ -51,6 +50,7 @@ Items are roughly priority-ordered within each section.
 
 ## 🔧 Infrastructure
 
+- [ ] Background job pattern for research — current approach caps at 3 search iterations to stay under Vercel's 300s timeout; if brief quality suffers, move to Inngest for durable execution with no timeout constraint
 - [ ] Error boundaries for failed data fetches (prospect page currently has no error state)
 - [ ] 429 rate-limit UI feedback — currently toast shows raw error string; could be friendlier
 - [x] Vercel deployment configured — live at https://saleslord-theta.vercel.app
