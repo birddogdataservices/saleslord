@@ -1,6 +1,6 @@
 # SalesLord — Handoff
 
-## Current version: 0.3.0 — Research working, email panel live
+## Current version: 0.4.0 — BYOK + invite management, ready for team deployment
 
 ---
 
@@ -89,16 +89,68 @@ where user_id = (select id from auth.users where email = 'jonathan.m.hanson@gmai
 
 ## What's next (priority order)
 
-1. **`/api/follow-up` route** — gated by reason >= 10 words, reads full note history, slop detection, logs api_usage
-2. **Follow-up panel UI** — reason input (word count gate), generated output with slop badge, copy button
-3. **BYOK** — per-user Anthropic API key in setup page; research + follow-up + refresh-email routes use it when set; fall back to platform key
-4. **`/api/refresh` route** — re-research one prospect, never overwrites timing, diff on brief fields
-5. **Re-research button** wired in topbar
-6. **`/api/cron/refresh-all`** — weekly refresh + Resend digest
+1. **Run the DB migration** (see below) — required before BYOK works for any user
+2. **`/api/refresh` route** — re-research one prospect, never overwrites timing, diff on brief fields
+3. **Re-research button** wired in topbar
+4. **`/api/cron/refresh-all`** — weekly refresh + Resend digest
+5. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
 
 ---
 
-## Architecture decisions made this session
+---
+
+## Session 4 summary (BYOK + invite management)
+
+### Completed
+
+**BYOK — bring your own Anthropic API key (AES-256-GCM encrypted)**
+- `anthropic_api_key text` column added to `rep_profiles` (see migration below — must run)
+- `lib/crypto.ts` — `encryptApiKey` / `decryptApiKey` using Node.js `crypto` (AES-256-GCM, random 96-bit IV per write, stored as `iv.authTag.ciphertext` hex). Requires `API_KEY_ENCRYPTION_SECRET` env var (64 hex chars).
+- `POST /api/profile/api-key` — server route that receives raw key, validates `sk-ant-` prefix, encrypts, writes to DB via admin client. Raw key never touches Supabase directly.
+- Setup page (`/setup`) — new "Anthropic API key" section; password input; "API key configured" badge when set; setup page server component strips key before passing to client (`hasApiKey: boolean` only); key save POSTs to `/api/profile/api-key` separately from profile save
+- `/api/research` and `/api/refresh-email` — hard gate: fetches encrypted key from `rep_profiles` via admin client, decrypts with `decryptApiKey`; 402 if not set, 500 if decryption fails; no platform fallback
+- `lib/types.ts` — `anthropic_api_key: string | null` added to `RepProfile`
+- `.env.local.example` — `API_KEY_ENCRYPTION_SECRET` documented with generation command
+
+**Invite management — `/admin/users`**
+- `GET/POST /api/admin/allowed-emails` — list and add entries; admin-only (403 for non-admins)
+- `DELETE /api/admin/allowed-emails/[id]` — remove entry; admin-only
+- `/admin/users` page — server component with admin gate; renders `AdminUsersClient`
+- `AdminUsersClient` — fetches list on mount, add form (email + optional note), remove button per row, toast feedback, optimistic list update
+- Sidebar — "Manage team →" link added alongside "Manage products →", visible to admins only
+
+**`proxy.ts` → `middleware.ts` (critical fix)**
+- `proxy.ts` was never being picked up by Next.js — auth was not enforced in dev or production
+- Renamed to `middleware.ts`, function renamed from `proxy` to `middleware`
+- `proxy.ts` left in place (inert — can be deleted)
+- `vercel.json` created with Monday 6am cron schedule for `/api/cron/refresh-all`
+
+### Required setup before deployment
+
+**1. DB migration (run in Supabase SQL editor):**
+```sql
+alter table rep_profiles add column if not exists anthropic_api_key text;
+```
+
+**2. Generate encryption secret (run once, save to env):**
+```
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+Add the output as `API_KEY_ENCRYPTION_SECRET` in `.env.local` and Vercel environment variables. **Do not lose this value** — if it changes, all stored keys become unreadable and users must re-enter them.
+
+**3. Add your own key** — go to `/setup` and enter your Anthropic API key. It will be encrypted before storage.
+
+### Architecture decisions
+- **No platform fallback** — each user must provide their own Anthropic API key. Cleaner cost isolation; no risk of absorbing team's usage.
+- **Keys encrypted at rest** — AES-256-GCM with a fresh random IV per write. Ciphertext stored in DB; plaintext only ever lives in server memory during a request. Even Supabase dashboard shows only ciphertext.
+- **Key write is a dedicated server route** — raw key goes browser → `/api/profile/api-key` (HTTPS) → encrypt → DB. Never hits Supabase client SDK directly.
+- **Key read is admin-client only** — fetched in API routes via service role, decrypted in-process, used immediately. Never returned to client.
+- **`allowed_emails` admin routes use service role** — the table has no RLS select policy (intentional), so all reads/writes go through API routes with the admin client. Client Supabase SDK is never used for this table.
+- **Follow-up de-prioritized** — decision made to focus on initial outreach only; follow-up route moved to nice-to-have in backlog.
+
+---
+
+## Architecture decisions made this session (sessions 1–3)
 
 - **Shared products table** replaces per-rep `products` jsonb. All reps see all products. Admins manage. Research uses all products and picks most relevant.
 - **Admin flag on rep_profiles** — `is_admin boolean default false`. Set via SQL. First admin bootstrapped manually; future admin management via an admin UI (backlogged).

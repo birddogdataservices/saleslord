@@ -10,6 +10,7 @@ import type { RepProfile, Product } from '@/lib/types'
 type Props = {
   profile: RepProfile | null
   products: Product[]
+  hasApiKey: boolean
 }
 
 function voiceStatus(samples: string) {
@@ -17,12 +18,13 @@ function voiceStatus(samples: string) {
   return 'calibrated'
 }
 
-export default function SetupForm({ profile, products }: Props) {
+export default function SetupForm({ profile, products, hasApiKey }: Props) {
   const supabase = createClient()
 
   const [repBackground, setBackground] = useState(profile?.rep_background ?? '')
   const [voiceSamples,  setVoice]      = useState(profile?.voice_samples  ?? '')
   const [icp,           setIcp]        = useState(profile?.icp_description ?? '')
+  const [apiKey,        setApiKey]     = useState('')
   const [saving, setSaving] = useState(false)
 
   const status = voiceStatus(voiceSamples)
@@ -34,6 +36,7 @@ export default function SetupForm({ profile, products }: Props) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { toast.error('Not authenticated.'); setSaving(false); return }
 
+    // Save profile fields via Supabase client (anon key — no secrets here)
     const { error } = await supabase
       .from('rep_profiles')
       .upsert({
@@ -44,9 +47,22 @@ export default function SetupForm({ profile, products }: Props) {
         updated_at:      new Date().toISOString(),
       }, { onConflict: 'user_id' })
 
+    if (error) { setSaving(false); toast.error('Failed to save profile.'); return }
+
+    // Save API key via server route — encrypted before DB write, never touches client
+    if (apiKey.trim()) {
+      const keyRes = await fetch('/api/profile/api-key', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ api_key: apiKey.trim() }),
+      })
+      const keyData = await keyRes.json()
+      if (!keyRes.ok) { setSaving(false); toast.error(keyData.error ?? 'Failed to save API key.'); return }
+      setApiKey('')
+    }
+
     setSaving(false)
-    if (error) toast.error('Failed to save profile.')
-    else       toast.success('Profile saved.')
+    toast.success('Profile saved.')
   }
 
   return (
@@ -108,7 +124,38 @@ export default function SetupForm({ profile, products }: Props) {
         />
       </Section>
 
-      {/* ── 4. Products (read-only — managed by admin) ── */}
+      {/* ── 4. Anthropic API key ── */}
+      <Section
+        title="Anthropic API key"
+        hint="Required to run research and email generation. Get yours at console.anthropic.com. Stored securely — never shown again after saving."
+        required
+      >
+        <div className="flex flex-col gap-2">
+          {hasApiKey && !apiKey && (
+            <div
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full self-start"
+              style={{ background: 'var(--sl-green-bg)', color: 'var(--sl-green-t)' }}
+            >
+              <span className="rounded-full inline-block" style={{ width: 6, height: 6, background: 'var(--sl-green-t)' }} />
+              API key configured
+            </div>
+          )}
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder={hasApiKey ? 'Enter new key to replace existing…' : 'sk-ant-…'}
+            value={apiKey}
+            onChange={e => setApiKey(e.target.value)}
+            className="rounded-[6px] px-3 py-2 text-[12px] outline-none font-mono"
+            style={{ borderColor: 'var(--sl-border)', border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
+          />
+          <p className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
+            Leave blank to keep your current key. Your key is used only server-side and never logged.
+          </p>
+        </div>
+      </Section>
+
+      {/* ── 5. Products (read-only — managed by admin) ── */}
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between">
           <div>

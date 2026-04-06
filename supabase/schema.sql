@@ -18,6 +18,7 @@ create table rep_profiles (
   voice_samples       text default '',
   products            jsonb default '[]', -- deprecated: replaced by shared products table
   is_admin            boolean default false, -- grants access to /admin/* and product management
+  anthropic_api_key   text,              -- per-user BYOK; required to run research/email — no platform fallback
   stripe_customer_id  text,              -- stubbed: populated when Stripe billing is wired
   updated_at          timestamptz default now()
 );

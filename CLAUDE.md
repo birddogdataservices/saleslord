@@ -25,7 +25,8 @@ Not a sequencing tool. Does not automate outreach. Intelligence and drafting lay
 NEXT_PUBLIC_SUPABASE_URL          # Safe client-side
 NEXT_PUBLIC_SUPABASE_ANON_KEY     # Safe client-side
 SUPABASE_SERVICE_ROLE_KEY         # Server-side only — admin client
-ANTHROPIC_API_KEY                 # Server-side only
+API_KEY_ENCRYPTION_SECRET         # 64 hex chars — AES-256-GCM key for encrypting user Anthropic keys in DB
+# ANTHROPIC_API_KEY is no longer used — users bring their own key via /setup
 ALLOWED_DOMAIN                    # e.g. "yourcompany.com" — server auth gate
 NEXT_PUBLIC_ALLOWED_DOMAIN        # Same value — passed to Google OAuth hd= param
 DAILY_CALL_LIMIT                  # Default 25 — max Anthropic calls per user per 24h
@@ -190,7 +191,7 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 
 6. **Timing is never overwritten by refresh.** Refresh updates news, pain_signals, initiatives, outreach_angle only. Timing requires explicit full re-research.
 
-7. **API keys never touch the client.** `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY` are used only in `/app/api/*` route handlers.
+7. **API keys never touch the client.** `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `API_KEY_ENCRYPTION_SECRET` are used only in `/app/api/*` route handlers. User Anthropic keys are stored AES-256-GCM encrypted in `rep_profiles.anthropic_api_key`; encrypted via `POST /api/profile/api-key`; decrypted via `lib/crypto.ts` only inside API routes.
 
 ## What Claude Code must never do
 
@@ -207,7 +208,7 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 
 ## Next.js 16 notes
 
-- Proxy file is `proxy.ts` (formerly `middleware.ts`); export function must be named `proxy`
+- Middleware file is `middleware.ts` at the root; export function must be named `middleware`. (An earlier session mistakenly called this `proxy.ts` with export `proxy` — that was never picked up by Next.js. Fixed in session 4.)
 - All pages using Supabase need `export const dynamic = 'force-dynamic'`
 - App Router — server components fetch data, client components handle interactivity
 - Route handlers live in `app/api/*/route.ts`

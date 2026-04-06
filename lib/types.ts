@@ -29,6 +29,7 @@ export type RepProfile = {
   rep_background: string
   voice_samples: string
   is_admin: boolean
+  anthropic_api_key: string | null  // per-user BYOK — never sent to client as plaintext
   stripe_customer_id: string | null
   updated_at: string
 }

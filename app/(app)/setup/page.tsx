@@ -12,10 +12,16 @@ export default async function SetupPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: profile }, { data: products }] = await Promise.all([
+  const [{ data: profileRaw }, { data: products }] = await Promise.all([
     supabase.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     supabase.from('products').select('*').order('created_at', { ascending: true }),
   ])
+
+  // Strip API key before passing to client — only send whether one is set
+  const hasApiKey = !!profileRaw?.anthropic_api_key
+  const profile = profileRaw
+    ? { ...profileRaw, anthropic_api_key: null } as RepProfile
+    : null
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ background: 'var(--sl-bg)' }}>
@@ -31,8 +37,9 @@ export default async function SetupPage() {
         </div>
 
         <SetupForm
-          profile={profile as RepProfile | null}
+          profile={profile}
           products={(products ?? []) as Product[]}
+          hasApiKey={hasApiKey}
         />
       </div>
     </div>

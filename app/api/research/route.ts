@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
+import { decryptApiKey } from '@/lib/crypto'
 import type { DmRole, CompanyStats, ProductPromptContext } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -143,6 +144,24 @@ export async function POST(request: Request) {
     adminClient.from('products').select('name, description, value_props, competitors').order('created_at', { ascending: true }),
   ])
 
+  // BYOK hard gate — decrypt stored key; no platform fallback
+  const storedKey = profile?.anthropic_api_key?.trim()
+  if (!storedKey) {
+    return Response.json(
+      { error: 'No Anthropic API key configured. Add your key in Profile & Settings.' },
+      { status: 402 }
+    )
+  }
+  let userApiKey: string
+  try {
+    userApiKey = decryptApiKey(storedKey)
+  } catch {
+    return Response.json(
+      { error: 'Failed to decrypt your API key. Please re-enter it in Profile & Settings.' },
+      { status: 500 }
+    )
+  }
+
   const products: ProductPromptContext[] = productRows ?? []
   if (products.length === 0) {
     return Response.json({ error: 'No products have been configured yet. Ask your admin to add at least one product.' }, { status: 400 })
@@ -150,7 +169,7 @@ export async function POST(request: Request) {
 
   // 5. Build and run the AI research call with agentic tool-use loop
   const today  = new Date()
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const client = new Anthropic({ apiKey: userApiKey })
 
   const systemPrompt = buildSystemPrompt(
     {

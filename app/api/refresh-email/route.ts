@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
+import { decryptApiKey } from '@/lib/crypto'
 import type { ProductPromptContext } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -53,6 +54,24 @@ export async function POST(request: Request) {
   const profile  = profileRes.data
   const products: ProductPromptContext[] = productRes.data ?? []
 
+  // BYOK hard gate — decrypt stored key; no platform fallback
+  const storedKey = profile?.anthropic_api_key?.trim()
+  if (!storedKey) {
+    return Response.json(
+      { error: 'No Anthropic API key configured. Add your key in Profile & Settings.' },
+      { status: 402 }
+    )
+  }
+  let userApiKey: string
+  try {
+    userApiKey = decryptApiKey(storedKey)
+  } catch {
+    return Response.json(
+      { error: 'Failed to decrypt your API key. Please re-enter it in Profile & Settings.' },
+      { status: 500 }
+    )
+  }
+
   // 5. Build a focused prompt — brief context + email rules only, no web search
   const productsBlock = products.length === 0
     ? 'Products: not specified'
@@ -85,7 +104,7 @@ Recent news: ${(brief.news ?? []).slice(0, 3).map((n: any) => `${n.date}: ${n.te
 Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
 
   // 6. Generate — no tools, text only
-  const client   = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const client   = new Anthropic({ apiKey: userApiKey })
   const response = await client.messages.create({
     model:      MODEL,
     max_tokens: 512,

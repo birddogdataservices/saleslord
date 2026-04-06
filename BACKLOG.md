@@ -7,12 +7,11 @@ Items are roughly priority-ordered within each section.
 - [x] Complete setup page (background, voice samples, ICP, products) — unlocks research
 - [x] Run first real prospect research end-to-end and verify summary page
 - [x] Email draft panel — "Draft email →" button, subject + body, slop detection badge, copy button
-- [ ] `/api/follow-up` route — gated by reason >= 10 words, reads full note history, logs api_usage
-- [ ] Follow-up panel UI — reason input (word count gate), generated output, slop detection badge
+- [x] **BYOK** — per-user Anthropic API key; hard gate (no key = no research, no fallback); input in setup page; stored server-side only
+- [x] **Invite management** — `/admin/users` page; pre-authorize by email; add/remove inline; admin-only
 
 ## 🟡 Should have (product is awkward without these)
 
-- [ ] **BYOK — bring your own Anthropic API key** — store encrypted on rep_profiles, use per-user key for all calls; fall back to platform key if not set; input + save in setup page
 - [ ] `/api/refresh` route — re-research single prospect, diff logic, never overwrites timing, logs api_usage
 - [ ] Re-research button wired in topbar → `/api/refresh`
 - [ ] `/api/cron/refresh-all` route — weekly refresh for all users, Resend digest
@@ -21,6 +20,7 @@ Items are roughly priority-ordered within each section.
 
 ## 🟢 Nice to have (quality of life)
 
+- [ ] `/api/follow-up` route + panel UI — gated by reason >= 10 words, reads full note history; de-prioritized (initial outreach focus only for now)
 - [ ] Email quality iteration — continue refining prompt rules; consider A/B testing different structures
 - [ ] Loading skeleton for prospect summary page while research runs
 - [ ] Voice calibration badge in app header (not just setup page)
@@ -44,7 +44,7 @@ Items are roughly priority-ordered within each section.
 
 ## 🔐 Access management
 
-- [ ] Admin UI to add/remove emails from `allowed_emails` table (currently requires direct Supabase access)
+- [x] Admin UI to add/remove emails from `allowed_emails` table — `/admin/users`
 - [ ] Admin UI to promote/demote other reps to admin (currently requires direct SQL)
 - [ ] Per-user usage dashboard — table of costs by day/endpoint
 - [ ] Option to switch from allowlist to domain-restriction (one `if` change in `proxy.ts`)
