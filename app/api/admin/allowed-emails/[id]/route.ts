@@ -6,8 +6,9 @@ import { createClient } from '@/lib/supabase/server'
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -24,7 +25,7 @@ export async function DELETE(
   const { error } = await adminClient
     .from('allowed_emails')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
 
   if (error) return Response.json({ error: 'Failed to remove email' }, { status: 500 })
   return new Response(null, { status: 204 })
