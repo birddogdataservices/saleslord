@@ -179,7 +179,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     messages,
   })
 
-  const MAX_SEARCH_ITERATIONS = 5  // check-updates is narrower — fewer searches needed
+  const MAX_SEARCH_ITERATIONS = 3  // check-updates is narrower — fewer searches needed
   let iterations = 0
   while (response.stop_reason === 'tool_use' && iterations < MAX_SEARCH_ITERATIONS) {
     iterations++
