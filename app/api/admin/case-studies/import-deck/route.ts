@@ -16,7 +16,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { decryptApiKey } from '@/lib/crypto'
-import { pdf } from 'pdf-to-img'
+// pdf-to-img (pdfjs-dist) loads a worker via a numeric webpack chunk ID at module
+// evaluation time, which breaks Next.js Turbopack's build-phase page data collection.
+// Dynamic import defers loading to request time and avoids the ERR_INVALID_ARG_TYPE error.
 
 const MODEL = 'claude-sonnet-4-6'
 // Per-import slide cap — prevents timeouts on large decks. Import is additive;
@@ -96,6 +98,7 @@ export async function POST(request: Request) {
   // 3. Convert PDF pages to PNG buffers
   let pages: Buffer[]
   try {
+    const { pdf } = await import('pdf-to-img')
     const doc = await pdf(buffer, { scale: 2.0 })
     const allPages: Buffer[] = []
     for await (const page of doc) {
