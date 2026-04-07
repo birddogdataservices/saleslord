@@ -11,7 +11,10 @@ import { EMAIL_RULES } from '@/lib/prompts'
 import { decryptApiKey } from '@/lib/crypto'
 import type { ProductPromptContext } from '@/lib/types'
 
-const MODEL = 'claude-sonnet-4-6'
+// Haiku is sufficient for email drafting — the context is already structured,
+// the output is short and constrained. 4× cheaper than Sonnet, noticeably faster.
+// Email refresh is excluded from the daily call limit (it doesn't count against research budget).
+const MODEL = 'claude-haiku-3-5'
 
 export async function POST(request: Request) {
   // 1. Auth
@@ -21,16 +24,8 @@ export async function POST(request: Request) {
 
   const adminClient = createAdminClient()
 
-  // 2. Rate limit — shared 24h bucket with all other endpoints
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const { count } = await adminClient
-    .from('api_usage').select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id).gte('created_at', since)
-
-  const limit = Number(process.env.DAILY_CALL_LIMIT ?? '25')
-  if ((count ?? 0) >= limit) {
-    return Response.json({ error: 'Daily limit reached. Resets in 24 hours.' }, { status: 429 })
-  }
+  // 2. No rate limit check — email refresh runs on Haiku and is intentionally excluded
+  // from the daily call limit so reps can iterate freely without burning research budget.
 
   // 3. Parse body
   const { prospect_id, product_id } = await request.json() as {

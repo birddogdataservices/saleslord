@@ -12,8 +12,12 @@ export function cn(...inputs: ClassValue[]) {
 // ─────────────────────────────────────────
 const PRICING: Record<string, { input: number; output: number }> = {
   'claude-sonnet-4-6': {
-    input:  3.00  / 1_000_000,
+    input:  3.00 / 1_000_000,
     output: 15.00 / 1_000_000,
+  },
+  'claude-haiku-3-5': {
+    input:  0.80 / 1_000_000,
+    output: 4.00 / 1_000_000,
   },
 }
 
