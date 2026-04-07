@@ -263,6 +263,7 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 - Import `lib/supabase/admin.ts` from anywhere outside `/app/api/*`
 - Expose the `case-study-slides` Storage bucket publicly or return signed URLs to unauthenticated requests
 - Use JSX in route handler `.ts` files — if a route needs JSX (e.g. `@react-pdf/renderer`), put the component in `lib/pdf/*.tsx` and import it, then call `React.createElement()` in the route
+- Import `pdf-to-img` (or any pdfjs-dist-based package) at the top level of a route — it loads a worker via a numeric webpack chunk ID at module evaluation time, breaking Next.js Turbopack's build phase with `ERR_INVALID_ARG_TYPE`. Always use `const { pdf } = await import('pdf-to-img')` inside the handler function
 
 ## Next.js 16 notes
 
