@@ -225,6 +225,42 @@ create policy "Users access updates via prospect"
   ));
 
 -- ─────────────────────────────────────────
+-- Case studies (admin-managed shared library)
+-- Slide images stored in Supabase Storage bucket: case-study-slides (PRIVATE)
+-- Bucket must be created manually in Supabase dashboard before import route is used.
+-- ─────────────────────────────────────────
+create table case_studies (
+  id               uuid primary key default gen_random_uuid(),
+  title            text not null,
+  company_name     text,
+  industry         text,
+  company_size     text,                    -- "Enterprise" | "Mid-market" | "SMB"
+  pain_solved      text,
+  product_used     text,
+  outcome          text,                    -- 2–3 sentence result summary
+  tags             text[] default '{}',
+  slide_image_path text,                    -- Supabase Storage path — e.g. "{id}.png"
+  source_deck      text,                    -- original PDF filename (provenance)
+  created_at       timestamptz default now()
+);
+alter table case_studies enable row level security;
+
+-- All authenticated users can read (needed by prospect matching + export)
+create policy "Authenticated users can read case studies"
+  on case_studies for select
+  using (auth.role() = 'authenticated');
+-- No client writes — admin routes use service role only
+
+-- ─────────────────────────────────────────
+-- Storage bucket: case-study-slides
+-- Run these steps in Supabase dashboard (Storage → New bucket):
+--   1. Name: case-study-slides
+--   2. Public: OFF (private — signed URLs only)
+--   3. File size limit: 20MB per file
+-- No SQL equivalent — buckets are created via Supabase dashboard or Management API.
+-- ─────────────────────────────────────────
+
+-- ─────────────────────────────────────────
 -- Indexes
 -- ─────────────────────────────────────────
 create index on products           (created_at asc);
@@ -235,3 +271,4 @@ create index on decision_makers    (prospect_id, sort_order asc);
 create index on api_usage          (user_id, created_at desc);
 create index on api_usage          (user_id, created_at desc) where endpoint != 'cron';
 create index on prospect_updates   (prospect_id, created_at desc);
+create index on case_studies       (created_at asc);

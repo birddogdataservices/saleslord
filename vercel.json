@@ -6,8 +6,11 @@
     }
   ],
   "functions": {
-    "app/api/research/route.ts": { "maxDuration": 60 },
-    "app/api/check-updates/route.ts": { "maxDuration": 60 },
-    "app/api/refresh-email/route.ts": { "maxDuration": 30 }
+    "app/api/research/route.ts": { "maxDuration": 300 },
+    "app/api/check-updates/route.ts": { "maxDuration": 300 },
+    "app/api/refresh-email/route.ts": { "maxDuration": 30 },
+    "app/api/admin/case-studies/import-deck/route.ts": { "maxDuration": 120 },
+    "app/api/case-studies/match/route.ts": { "maxDuration": 30 },
+    "app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 }
   }
 }

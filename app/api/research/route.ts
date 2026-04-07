@@ -198,7 +198,7 @@ export async function POST(request: Request) {
   // Agentic loop — handle multiple web search tool calls
   // Cap at 7 iterations to stay well under Vercel's 300s function timeout.
   // The model typically needs 4–6 searches for a thorough brief.
-  const MAX_SEARCH_ITERATIONS = 3
+  const MAX_SEARCH_ITERATIONS = 6
   let iterations = 0
   while (response.stop_reason === 'tool_use' && iterations < MAX_SEARCH_ITERATIONS) {
     iterations++

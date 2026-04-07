@@ -1,5 +1,6 @@
 import type { ProspectBrief, DecisionMaker, ProspectNote } from '@/lib/types'
 import ProspectLog from './ProspectLog'
+import CaseStudySection from './CaseStudySection'
 
 // ── Outreach Readiness ────────────────────────────────────────────
 function ReadinessCard({ brief, dms, notes }: {
@@ -86,14 +87,23 @@ type Props = {
   dms: DecisionMaker[]
   notes: ProspectNote[]
   prospectId: string
+  prospectName: string
+  caseStudyCount: number
 }
 
-export default function RightColumn({ brief, dms, notes, prospectId }: Props) {
+export default function RightColumn({ brief, dms, notes, prospectId, prospectName, caseStudyCount }: Props) {
   return (
     <div className="flex flex-col gap-[14px]">
       <ReadinessCard brief={brief} dms={dms} notes={notes} />
       {brief.outreach_angle && <AngleCard angle={brief.outreach_angle} />}
       {(brief.tech_signals?.length ?? 0) > 0 && <TechCard signals={brief.tech_signals} />}
+      {caseStudyCount > 0 && (
+        <CaseStudySection
+          prospectId={prospectId}
+          prospectName={prospectName}
+          caseStudyCount={caseStudyCount}
+        />
+      )}
       <ProspectLog notes={notes} prospectId={prospectId} />
     </div>
   )

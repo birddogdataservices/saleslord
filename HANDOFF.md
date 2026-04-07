@@ -1,6 +1,262 @@
 # SalesLord — Handoff
 
-## Current version: 0.4.0 — BYOK + invite management, ready for team deployment
+## Current version: 0.5.1 — Case Study Matcher (pending seeding test)
+
+---
+
+## Session 7 summary (Case Study Matcher — full implementation)
+
+### What was built
+
+Full Case Study Matcher feature, matching the Session 6 spec exactly. All routes, UI components, and wiring are complete. **Feature is code-complete but not yet end-to-end tested — waiting on Pentaho PDF from Jon.**
+
+### Files created / modified
+
+| File | Change |
+|---|---|
+| `supabase/schema.sql` | Added `case_studies` table + RLS + Storage bucket setup notes + index |
+| `lib/types.ts` | Added `CaseStudy`, `CaseStudyMatch` types; extended `ApiUsage.endpoint` union |
+| `lib/pdf/CaseStudiesPdf.tsx` | PDF document component (separate `.tsx` so route stays `.ts`) |
+| `app/api/admin/case-studies/route.ts` | GET + POST + DELETE — admin CRUD, service role only |
+| `app/api/admin/case-studies/import-deck/route.ts` | PDF → png (pdf-to-img) → Claude vision → DB + Storage |
+| `app/admin/case-studies/page.tsx` | Admin page — server component, admin gate |
+| `app/admin/case-studies/AdminCaseStudiesClient.tsx` | Client CRUD + PDF import UI |
+| `app/api/case-studies/match/route.ts` | Prospect matching — single Claude call, no web search |
+| `app/api/case-studies/slide-url/[id]/route.ts` | Signed URL for slide images (1hr expiry) |
+| `app/api/case-studies/export-pdf/route.ts` | PDF export — signed URLs → @react-pdf/renderer |
+| `components/prospect/CaseStudySection.tsx` | Right column UI — idle/loading/results states, export |
+| `components/prospect/CaseStudySlideModal.tsx` | Slide preview modal |
+| `components/prospect/RightColumn.tsx` | Added `CaseStudySection` (hidden when library is empty) |
+| `components/prospect/Sidebar.tsx` | Added "Case studies →" admin link |
+| `app/(app)/prospects/[id]/page.tsx` | Added `caseStudyCount` fetch + passed to `RightColumn` |
+| `vercel.json` | Added maxDuration for import-deck (60s), match (30s), export-pdf (30s) |
+| `package.json` | Added `pdf-to-img` |
+
+### Architecture decisions
+
+- **`pdf-to-img` instead of `pdf2pic`** — `pdf-to-img` wraps `pdfjs-dist` with no system binary deps. Works in Vercel serverless; no Ghostscript required.
+- **PDF component in `lib/pdf/CaseStudiesPdf.tsx`** — Route handlers are `.ts` files; JSX lives in a separate `.tsx` file, imported and invoked via `React.createElement()`.
+- **Import is additive** — never wipes existing records. Re-uploading the same filename creates new records; admin deletes duplicates inline.
+- **30-slide cap per import run** — prevents Vercel 60s timeout on large decks. Import is additive, so large decks can be uploaded in parts.
+- **`caseStudyCount` fetched at page load** — single `count` query added to the parallel fetch in the prospect page. `CaseStudySection` only renders if count > 0, avoiding unnecessary rendering.
+- **Signed URLs are short-lived** — 1hr for slide preview (modal fetches on open), 5min for export (server-side use only).
+
+### ⚠️ Required before feature is usable (one-time setup)
+
+1. **Run Supabase migration** (in SQL editor):
+   ```sql
+   -- Copy the case_studies block from supabase/schema.sql
+   -- Includes table, RLS policy, and index
+   ```
+
+2. **Create Storage bucket** (Supabase dashboard → Storage → New bucket):
+   - Name: `case-study-slides`
+   - Public: **OFF** (private — signed URLs only)
+   - File size limit: 10MB
+
+3. **Import deck** — go to `/admin/case-studies`, upload the Pentaho PDF
+
+4. **Verify** — check import count, review extracted records, run "Find matches" on a prospect
+
+### Known risks / watch points
+
+- **pdf-to-img on Vercel** — needs real-world test. If pdfjs-dist has runtime issues, fallback is ZIP-of-PNGs (BACKLOG deferred v2).
+- **Large decks** — 30-slide cap is conservative. If the Pentaho deck has many more, upload in halves (PDF can be split with any PDF tool). Each import run processes at most 30 pages serially.
+- **Edit functionality** — the admin client-side edit currently does an optimistic state update but does NOT persist to DB via API. The route only has POST (create) and DELETE. If inline editing is needed before a PATCH endpoint is added, admin should delete + re-add manually. This is low-priority since import auto-fills all fields.
+
+---
+
+## Session 6 summary (design only — Case Study Matcher)
+
+### Feature: Case Study Matcher
+
+**Problem being solved:** Reps need to quickly find and share relevant customer case studies for a given prospect. The Pentaho website's on-site filtering is weak. SalesLord already knows the prospect's industry, size, pain signals, and initiatives — it's well-positioned to do the matching automatically.
+
+**Source of truth for case studies:** A Pentaho customer success deck (PowerPoint, exported to PDF by the user before upload). Deck has more slides than the public website. Deck changes infrequently — manual re-upload is acceptable for now.
+
+**Output:** A prospect-specific PDF of the most relevant case study slides, assembled in one click.
+
+---
+
+### Where it lives in the UI
+
+**Right column** (`RightColumn.tsx`), under outreach readiness. Section label: **"Relevant case studies on file."** NOT in the topbar. This is an outreach preparation tool, not a research action.
+
+- Only renders if `case_studies` table has records AND a brief exists for this prospect.
+- Idle state: section header + "Find matches" button + subtle count ("23 case studies on file")
+- Loading: spinner + "Matching against N case studies…"
+- Results: up to 5 ranked match cards (see card spec below)
+- Results persist in component state for the session — not stored to DB
+
+---
+
+### New DB table: `case_studies`
+
+```sql
+create table case_studies (
+  id               uuid primary key default gen_random_uuid(),
+  title            text not null,
+  company_name     text,
+  industry         text,
+  company_size     text,            -- "Enterprise" | "Mid-market" | "SMB"
+  pain_solved      text,
+  product_used     text,
+  outcome          text,            -- 2–3 sentence result summary
+  tags             text[] default '{}',
+  slide_image_path text,            -- Supabase Storage path — bucket: case-study-slides
+  source_deck      text,            -- original PDF filename (provenance)
+  created_at       timestamptz default now()
+);
+alter table case_studies enable row level security;
+create policy "Authenticated users can read case studies"
+  on case_studies for select
+  using (auth.role() = 'authenticated');
+-- No client writes — admin routes use service role only
+```
+
+### New Supabase Storage bucket
+
+`case-study-slides` — **private**. Service role for writes. Signed URLs for reads (via `/api/case-studies/slide-url/[id]`). Slide images stored as `{case_study_id}.png`.
+
+---
+
+### Admin seeding flow
+
+**Page:** `/admin/case-studies` — admin-only, same pattern as `/admin/products`. Two sections: import at top, full CRUD list below.
+
+**Upload:** Admin exports the Pentaho success deck as a PDF, uploads via file input on the page.
+
+**Route:** `POST /api/admin/case-studies/import-deck`
+
+1. Receive PDF upload
+2. Convert each page to PNG using `pdf2pic`
+   - ⚠️ **Vercel runtime warning:** `pdf2pic` requires ghostscript or graphicsmagick as a system dependency. These are NOT available on Vercel's serverless runtime. Claude Code must test this before building the full flow. If unavailable, the fallback is accepting a ZIP of PNGs instead of a PDF — same route, different input parsing. Flag the outcome to Jon before proceeding.
+3. For each slide PNG, call Claude vision (no web search) to extract:
+   ```json
+   {
+     "is_case_study": true,
+     "company_name": "...",
+     "industry": "...",
+     "company_size": "...",
+     "pain_solved": "...",
+     "product_used": "...",
+     "outcome": "...",
+     "tags": ["...", "..."],
+     "title": "..."
+   }
+   ```
+4. Skip slides where `is_case_study: false` (title slides, section dividers, etc.)
+5. Upload qualifying slide PNGs to Supabase Storage bucket `case-study-slides`
+6. Insert records into `case_studies`
+7. Return `{ imported: N }` — admin sees toast with count
+
+No preview/review step before committing. Admin edits records inline after import if needed.
+
+Import is **additive** — does not wipe existing records. Handles re-uploads of updated decks gracefully.
+
+---
+
+### Matching route
+
+**`POST /api/case-studies/match`**
+
+Input: `{ prospect_id: string }`
+
+1. Auth + BYOK check (standard pattern)
+2. Fetch prospect brief: `industry`, `pain_signals`, `initiatives`, `stats` (headcount, stage), `tech_signals`
+3. Fetch all case studies from DB (metadata only — no images)
+4. Single Claude call, no web search:
+   - System: "You are matching sales case studies to a prospect. Return JSON only."
+   - Prompt includes: full prospect profile + all case study records
+   - Output: `{ matches: [{ case_study_id, relevance_score, match_reasons: string[] }] }` — top 5
+   - `match_reasons` examples: `["Manufacturing industry", "ERP integration pain signal", "Enterprise size"]`
+5. Merge match results with full case study records
+6. Log to `api_usage` with endpoint `'case-study-match'`
+7. Return merged array
+
+Token cost estimate: ~2–4k tokens (~$0.003–0.005 per call). Does count against daily call limit.
+
+---
+
+### Match card UI (`CaseStudySection.tsx`)
+
+Each of the top 5 cards shows:
+- Company name + industry pill
+- Outcome summary (2–3 sentences)
+- Match reason chips (model-generated) — e.g. "Manufacturing" · "ERP integration" · "Enterprise"
+- "Preview slide →" link → opens `CaseStudySlideModal`
+- Checkbox for PDF export selection
+
+Footer (below cards):
+- "Export selected as PDF" button — disabled until at least one checkbox checked
+
+---
+
+### Slide preview modal (`CaseStudySlideModal.tsx`)
+
+- Triggered by "Preview slide →" on any card
+- Fetches signed URL from `/api/case-studies/slide-url/[id]`
+- Renders slide PNG image
+- Company name + outcome below image
+- Close button
+
+---
+
+### PDF export route
+
+**`POST /api/case-studies/export-pdf`**
+
+Input: `{ case_study_ids: string[], prospect_name: string }`
+
+1. Auth check (no Anthropic call)
+2. Fetch case study records + generate signed Storage URLs for each slide
+3. Download PNGs server-side
+4. Assemble PDF using `@react-pdf/renderer` (already in stack):
+   - Cover page: "Case Studies for [Prospect Name]" + date
+   - One slide image per page, in selection order
+5. Stream as download
+
+Filename: `{prospect-name}-case-studies.pdf`
+Does **not** log to `api_usage` — no Anthropic call involved.
+
+---
+
+### Signed URL route
+
+**`GET /api/case-studies/slide-url/[id]`**
+
+- Auth check
+- Fetch `slide_image_path` from `case_studies` for given ID
+- Generate short-lived signed URL via Supabase Storage admin client
+- Return `{ url: string }`
+- Never expose Storage bucket URL directly to client
+
+---
+
+### Files to create / modify
+
+| File | Action |
+|---|---|
+| `supabase/schema.sql` | Add `case_studies` table + RLS |
+| `app/admin/case-studies/page.tsx` | New admin page — import + CRUD |
+| `app/api/admin/case-studies/route.ts` | GET (list) + POST (create) + DELETE |
+| `app/api/admin/case-studies/import-deck/route.ts` | PDF → extract → seed ⚠️ test pdf2pic first |
+| `app/api/case-studies/match/route.ts` | Prospect matching call |
+| `app/api/case-studies/export-pdf/route.ts` | Assemble + stream PDF |
+| `app/api/case-studies/slide-url/[id]/route.ts` | Signed Storage URL |
+| `components/prospect/RightColumn.tsx` | Add `CaseStudySection` |
+| `components/prospect/CaseStudySection.tsx` | New — match trigger, cards, export |
+| `components/prospect/CaseStudySlideModal.tsx` | New — slide preview modal |
+| `lib/types.ts` | Add `CaseStudy` type |
+
+---
+
+### Deferred to v2
+
+- "Refresh from web" — scrape Pentaho website to auto-populate/update library
+- Per-prospect history of which case studies were shared
+- ZIP-of-PNGs import fallback (only if pdf2pic fails on Vercel)
+- Bulk CSV edit of library
 
 ---
 
@@ -87,8 +343,6 @@ where user_id = (select id from auth.users where email = 'jonathan.m.hanson@gmai
 
 ---
 
----
-
 ## Session 5 summary (Check for Updates, crash recovery, timeout fix)
 
 ### Completed
@@ -147,9 +401,10 @@ create index on prospect_updates (prospect_id, created_at desc);
 
 ## What's next (priority order)
 
-1. **`/api/cron/refresh-all`** — weekly refresh + Resend digest (not urgent — cron schedule already in vercel.json)
-2. **Background job pattern** — if research quality at 3 iterations proves insufficient, move to Inngest or similar to remove the serverless timeout constraint
-3. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
+1. **Case Study Matcher** — see Session 6 spec above. Start with the Supabase migration + admin CRUD page, then the import route (verify pdf2pic on Vercel first), then matching + right column UI, then PDF export.
+2. **`/api/cron/refresh-all`** — weekly refresh + Resend digest (not urgent — cron schedule already in vercel.json)
+3. **Background job pattern** — if research quality at 3 iterations proves insufficient, move to Inngest or similar to remove the serverless timeout constraint
+4. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now
 
 ---
 

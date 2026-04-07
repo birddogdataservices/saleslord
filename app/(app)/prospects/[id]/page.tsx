@@ -18,21 +18,25 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
   const supabase = await createClient()
 
   // Fetch all data in parallel
-  const [prospectRes, briefRes, dmsRes, notesRes, updatesRes] = await Promise.all([
+  const [prospectRes, briefRes, dmsRes, notesRes, updatesRes, caseStudyCountRes, productsRes] = await Promise.all([
     supabase.from('prospects').select('*').eq('id', id).single(),
     supabase.from('prospect_briefs').select('*').eq('prospect_id', id).order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('decision_makers').select('*').eq('prospect_id', id).order('sort_order'),
     supabase.from('prospect_notes').select('*').eq('prospect_id', id).order('created_at', { ascending: false }),
     supabase.from('prospect_updates').select('*').eq('prospect_id', id).order('created_at', { ascending: false }),
+    supabase.from('case_studies').select('*', { count: 'exact', head: true }),
+    supabase.from('products').select('id, name').order('created_at', { ascending: true }),
   ])
 
   if (!prospectRes.data) notFound()
 
-  const prospect = prospectRes.data
-  const brief    = briefRes.data as ProspectBrief | null
-  const dms      = (dmsRes.data ?? []) as DecisionMaker[]
-  const notes    = (notesRes.data ?? []) as ProspectNote[]
-  const updates  = (updatesRes.data ?? []) as ProspectUpdate[]
+  const prospect       = prospectRes.data
+  const brief          = briefRes.data as ProspectBrief | null
+  const dms            = (dmsRes.data ?? []) as DecisionMaker[]
+  const notes          = (notesRes.data ?? []) as ProspectNote[]
+  const updates        = (updatesRes.data ?? []) as ProspectUpdate[]
+  const caseStudyCount = caseStudyCountRes.count ?? 0
+  const products       = (productsRes.data ?? []) as { id: string; name: string }[]
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -82,7 +86,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
             <CheckUpdatesButton prospectId={id} lastRefreshedAt={prospect.last_refreshed_at} />
           )}
           {brief?.email && (
-            <EmailDraftButton initialEmail={brief.email} prospectId={id} />
+            <EmailDraftButton initialEmail={brief.email} prospectId={id} products={products} />
           )}
         </div>
       </div>
@@ -183,7 +187,14 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               </div>
 
               {/* RIGHT column — 340px fixed */}
-              <RightColumn brief={brief} dms={dms} notes={notes} prospectId={id} />
+              <RightColumn
+                brief={brief}
+                dms={dms}
+                notes={notes}
+                prospectId={id}
+                prospectName={prospect.name}
+                caseStudyCount={caseStudyCount}
+              />
             </div>
           )}
         </div>

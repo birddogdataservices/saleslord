@@ -14,6 +14,8 @@ Not a sequencing tool. Does not automate outreach. Intelligence and drafting lay
 - **Auth**: Supabase Google OAuth
 - **AI**: Anthropic `claude-sonnet-4-6` via server-side Route Handlers only
 - **Web search**: Anthropic web search tool (`web_search_20250305`)
+- **PDF-to-image**: `pdf-to-img` (wraps `pdfjs-dist` — no system binary deps, Vercel-safe)
+- **PDF generation**: `@react-pdf/renderer` — server-side only, PDF components in `lib/pdf/*.tsx`
 - **Email**: Resend (weekly digest)
 - **Payments**: Stripe (stubbed — wire when ready)
 - **Deployment**: Vercel (Next.js native)
@@ -75,7 +77,8 @@ See `.env.local.example` for the full reference.
 │       ├── setup/              # Rep profile setup page
 │       ├── admin/
 │       │   ├── products/       # Admin CRUD for shared products
-│       │   └── users/          # Admin invite management (allowed_emails)
+│       │   ├── users/          # Admin invite management (allowed_emails)
+│       │   └── case-studies/   # Admin CRUD + PDF deck import for case study library
 │       └── prospects/[id]/     # Full prospect summary page
 ├── components/
 │   ├── ui/                     # shadcn components
@@ -87,14 +90,23 @@ See `.env.local.example` for the full reference.
 │       ├── NewsCard.tsx        # Paginated news (3/page, client component)
 │       ├── DecisionMakers.tsx  # DM cards with role dropdown
 │       ├── ProspectLog.tsx     # Filterable note log with add form
-│       └── RightColumn.tsx     # Outreach readiness, angle, tech, log wrapper
+│       ├── RightColumn.tsx     # Outreach readiness, angle, tech, log wrapper
+│       ├── CaseStudySection.tsx     # Match trigger, ranked cards, export — in right column
+│       └── CaseStudySlideModal.tsx  # Slide image preview modal
 └── app/api/
     ├── research/route.ts       # POST — full prospect research ✅
     ├── refresh-email/route.ts  # POST — regenerate email draft only ✅
     ├── profile/
     │   └── api-key/route.ts    # POST — encrypt + store user Anthropic key ✅
     ├── admin/
-    │   └── allowed-emails/     # GET + POST + DELETE — invite management ✅
+    │   ├── allowed-emails/     # GET + POST + DELETE — invite management ✅
+    │   └── case-studies/
+    │       ├── route.ts                  # GET (list) + POST (create) + DELETE
+    │       └── import-deck/route.ts      # POST — PDF upload → extract → seed
+    ├── case-studies/
+    │   ├── match/route.ts               # POST — prospect matching call
+    │   ├── export-pdf/route.ts          # POST — assemble + stream PDF of selected slides
+    │   └── slide-url/[id]/route.ts      # GET — generate signed Supabase Storage URL
     ├── export/pdf/[id]/        # GET — PDF brief export ✅
     ├── refresh/route.ts        # POST — re-research one prospect (to build)
     └── cron/refresh-all/       # GET — weekly cron (to build)
@@ -112,8 +124,7 @@ See `supabase/schema.sql` for the full migration. Tables:
 - `prospect_notes` — log entries; filter by state + industry
 - `follow_ups` — gated by reason (>= 10 words)
 - `api_usage` — every Anthropic call logged here with token counts + cost_usd
-
-All tables have RLS. Client always uses anon key. Service role key only in `/app/api/*`.
+- `case_studies` — shared library; admin-managed; slide images in Supabase Storage bucket `case-study-slides`
 
 ## rep_profiles.products shape
 
@@ -130,6 +141,27 @@ type Product = {
 
 The research prompt handles 1 or many products. With multiple products it instructs the model to match the most relevant one to the prospect.
 
+## case_studies table shape
+
+```ts
+type CaseStudy = {
+  id: string
+  title: string
+  company_name: string | null
+  industry: string | null
+  company_size: string | null     // "Enterprise" | "Mid-market" | "SMB"
+  pain_solved: string | null
+  product_used: string | null
+  outcome: string | null          // 2–3 sentence result summary
+  tags: string[]
+  slide_image_path: string | null // Supabase Storage path — bucket: case-study-slides
+  source_deck: string | null      // original PDF filename, for provenance
+  created_at: string
+}
+```
+
+RLS: all authenticated users can read; no client writes — admin routes use service role only.
+
 ## API routes
 
 ### POST /api/research ✅ built
@@ -143,6 +175,18 @@ Re-research one prospect. Diffs new brief. Never overwrites timing. Logs to api_
 
 ### GET /api/cron/refresh-all — to build
 Weekly cron. Service role. Re-researches all prospects, sends Resend digest.
+
+### POST /api/admin/case-studies/import-deck — to build
+Admin-only. Accepts PDF upload. Converts pages to PNGs via `pdf2pic`. Calls Claude vision per slide to extract metadata (is_case_study, company_name, industry, company_size, pain_solved, product_used, outcome, tags). Uploads qualifying slide PNGs to Supabase Storage bucket `case-study-slides`. Inserts records into `case_studies`. ⚠️ `pdf2pic` requires ghostscript — test carefully on Vercel; if unavailable, fallback is ZIP of PNGs.
+
+### POST /api/case-studies/match — to build
+No web search. Fetches prospect brief + all case studies. Single Claude call to rank top 5 by relevance and return match_reasons per result. Logs to api_usage with endpoint `'case-study-match'`. ~2–4k tokens per call (~$0.003–0.005).
+
+### POST /api/case-studies/export-pdf — to build
+No Anthropic call. Fetches case study records + signed Storage URLs for selected IDs. Assembles PDF (cover page + one slide image per page) using @react-pdf/renderer. Streams as download. Does NOT log to api_usage.
+
+### GET /api/case-studies/slide-url/[id] — to build
+Generates a short-lived signed URL for a single slide image in Supabase Storage. Used by CaseStudySlideModal to render previews without exposing the storage bucket publicly.
 
 ## Rate limiting
 
@@ -185,6 +229,7 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 - Sidebar groups: Window open → Approaching → Monitoring
 - Role pills reassignable via dropdown; custom roles supported
 - Log filterable by state and industry independently
+- Case Study Matcher lives in the right column under outreach readiness — NOT in the topbar
 
 ## Core design principles (never violate)
 
@@ -202,6 +247,8 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 
 7. **API keys never touch the client.** `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `API_KEY_ENCRYPTION_SECRET` are used only in `/app/api/*` route handlers. User Anthropic keys are stored AES-256-GCM encrypted in `rep_profiles.anthropic_api_key`; encrypted via `POST /api/profile/api-key`; decrypted via `lib/crypto.ts` only inside API routes.
 
+8. **Case study slide images are never public.** The `case-study-slides` Supabase Storage bucket must be private. Always serve images via short-lived signed URLs from `/api/case-studies/slide-url/[id]`. Never expose the bucket URL directly to the client.
+
 ## What Claude Code must never do
 
 - Generate follow-up without stated reason
@@ -214,6 +261,8 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 - Skip RLS on client queries
 - Invent UI patterns not in the mockup without flagging first
 - Import `lib/supabase/admin.ts` from anywhere outside `/app/api/*`
+- Expose the `case-study-slides` Storage bucket publicly or return signed URLs to unauthenticated requests
+- Use JSX in route handler `.ts` files — if a route needs JSX (e.g. `@react-pdf/renderer`), put the component in `lib/pdf/*.tsx` and import it, then call `React.createElement()` in the route
 
 ## Next.js 16 notes
 

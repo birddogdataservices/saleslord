@@ -139,12 +139,33 @@ export type ApiUsage = {
   id: string
   user_id: string
   prospect_id: string | null
-  endpoint: 'research' | 'follow-up' | 'refresh' | 'email' | 'cron' | 'check-updates'
+  endpoint: 'research' | 'follow-up' | 'refresh' | 'email' | 'cron' | 'check-updates' | 'case-study-match'
   model: string
   input_tokens: number
   output_tokens: number
   cost_usd: number
   created_at: string
+}
+
+export type CaseStudy = {
+  id: string
+  title: string
+  company_name: string | null
+  industry: string | null
+  company_size: string | null   // "Enterprise" | "Mid-market" | "SMB"
+  pain_solved: string | null
+  product_used: string | null
+  outcome: string | null        // 2–3 sentence result summary
+  tags: string[]
+  slide_image_path: string | null  // Supabase Storage path — bucket: case-study-slides
+  source_deck: string | null       // original PDF filename, for provenance
+  created_at: string
+}
+
+// Returned by /api/case-studies/match — case study + relevance info merged
+export type CaseStudyMatch = CaseStudy & {
+  relevance_score: number
+  match_reasons: string[]
 }
 
 // ─────────────────────────────────────────

@@ -16,6 +16,13 @@ Items are roughly priority-ordered within each section.
 - [ ] `/api/cron/refresh-all` route — weekly refresh for all users, Resend digest
 - [ ] Vercel cron wired (`vercel.json` already has the schedule)
 - [ ] Product selector in "Add prospect" flow — when multiple products exist, let rep pick which to research against
+- [x] **Case Study Matcher** — built in session 7. All routes + UI complete. **⚠️ Pending seeding test** — waiting on Pentaho PDF from Jon. Steps when PDF arrives:
+  1. Run the Supabase migration in `schema.sql` (case_studies table + RLS)
+  2. Create `case-study-slides` Storage bucket (private) in Supabase dashboard
+  3. Go to `/admin/case-studies` → Upload PDF → verify import count + review extracted records
+  4. Test `pdf-to-img` on Vercel — if it fails due to runtime issues, implement ZIP-of-PNGs fallback
+  5. Run "Find matches" on a prospect with a brief, verify top-5 results
+  6. Test slide preview modal (signed URL) and PDF export
 
 ## 🟢 Nice to have (quality of life)
 
@@ -54,3 +61,10 @@ Items are roughly priority-ordered within each section.
 - [ ] Error boundaries for failed data fetches (prospect page currently has no error state)
 - [ ] 429 rate-limit UI feedback — currently toast shows raw error string; could be friendlier
 - [x] Vercel deployment configured — live at https://saleslord-theta.vercel.app
+
+## 🗂️ Case Study Matcher — deferred v2 items
+
+- [ ] "Refresh from web" — admin action to scrape Pentaho's website and auto-populate/update library
+- [ ] Per-prospect history of which case studies were shared with which prospect
+- [ ] ZIP-of-PNGs import path (fallback if pdf2pic hits Vercel runtime issues)
+- [ ] Bulk CSV edit of case study library

@@ -33,7 +33,10 @@ export async function POST(request: Request) {
   }
 
   // 3. Parse body
-  const { prospect_id } = await request.json() as { prospect_id?: string }
+  const { prospect_id, product_id } = await request.json() as {
+    prospect_id?: string
+    product_id?: string   // optional — if provided, focus email on this product only
+  }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
   // 4. Fetch prospect, brief, rep profile, products, and most recent update blurb in parallel
@@ -42,7 +45,7 @@ export async function POST(request: Request) {
     adminClient.from('prospect_briefs').select('*').eq('prospect_id', prospect_id)
       .order('created_at', { ascending: false }).limit(1).single(),
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
-    adminClient.from('products').select('name, description, value_props, competitors')
+    adminClient.from('products').select('id, name, description, value_props, competitors')
       .order('created_at', { ascending: true }),
     // Most recent update blurb — used to freshen the email context if available
     adminClient.from('prospect_updates').select('summary, news_items, created_at')
@@ -56,8 +59,16 @@ export async function POST(request: Request) {
   const prospect    = prospectRes.data
   const brief       = briefRes.data
   const profile     = profileRes.data
-  const products: ProductPromptContext[] = productRes.data ?? []
   const latestUpdate = latestUpdateRes.data ?? null
+
+  // If a specific product_id was requested, filter to just that one.
+  // Otherwise pass all products and let the model pick the most relevant.
+  const allProducts: ProductPromptContext[] = productRes.data ?? []
+  const products: ProductPromptContext[] = product_id
+    ? allProducts.filter((p: any) => p.id === product_id)
+    : allProducts
+  // Fall back to all products if the requested id wasn't found
+  const activeProducts = products.length > 0 ? products : allProducts
 
   // BYOK hard gate — decrypt stored key; no platform fallback
   const storedKey = profile?.anthropic_api_key?.trim()
@@ -78,13 +89,16 @@ export async function POST(request: Request) {
   }
 
   // 5. Build a focused prompt — brief context + email rules only, no web search
-  const productsBlock = products.length === 0
+  const isFocused = product_id && products.length === 1
+  const productsBlock = activeProducts.length === 0
     ? 'Products: not specified'
-    : products.length === 1
-      ? `Product: ${products[0].name} — ${products[0].description}. Value props: ${products[0].value_props}. Competes with: ${products[0].competitors}`
-      : `Products (match the most relevant):\n${products.map((p, i) =>
-          `  ${i + 1}. ${p.name}: ${p.description}. Value props: ${p.value_props}. Competes with: ${p.competitors}`
-        ).join('\n')}`
+    : isFocused
+      ? `Product (focus this email entirely on this product): ${activeProducts[0].name} — ${activeProducts[0].description}. Value props: ${activeProducts[0].value_props}. Competes with: ${activeProducts[0].competitors}`
+      : activeProducts.length === 1
+        ? `Product: ${activeProducts[0].name} — ${activeProducts[0].description}. Value props: ${activeProducts[0].value_props}. Competes with: ${activeProducts[0].competitors}`
+        : `Products (match the most relevant to this prospect):\n${activeProducts.map((p, i) =>
+            `  ${i + 1}. ${p.name}: ${p.description}. Value props: ${p.value_props}. Competes with: ${p.competitors}`
+          ).join('\n')}`
 
   const systemPrompt = `You are a B2B sales email writer. Your only job is to write one cold outreach email.
 

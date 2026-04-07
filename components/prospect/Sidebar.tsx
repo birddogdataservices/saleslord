@@ -151,6 +151,15 @@ export default function Sidebar({ prospects, monthlyCostUsd, isAdmin }: Props) {
             >
               Manage team →
             </Link>
+            <Link
+              href="/admin/case-studies"
+              className="text-[11px] transition-colors block mt-[5px]"
+              style={{ color: '#555' }}
+              onMouseEnter={e => ((e.target as HTMLElement).style.color = '#b8b6b0')}
+              onMouseLeave={e => ((e.target as HTMLElement).style.color = '#555')}
+            >
+              Case studies →
+            </Link>
           </>
         )}
       </div>

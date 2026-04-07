@@ -5,20 +5,24 @@ import { toast } from 'sonner'
 import { detectSlop } from '@/lib/slop'
 import type { EmailDraft } from '@/lib/types'
 
+type ProductOption = { id: string; name: string }
+
 type Props = {
   initialEmail: EmailDraft
   prospectId: string
+  products: ProductOption[]   // list of available products for the selector
 }
 
 function wordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
-export default function EmailDraftButton({ initialEmail, prospectId }: Props) {
-  const [open,       setOpen]       = useState(false)
-  const [email,      setEmail]      = useState<EmailDraft>(initialEmail)
-  const [refreshing, setRefreshing] = useState(false)
-  const [copied,     setCopied]     = useState(false)
+export default function EmailDraftButton({ initialEmail, prospectId, products }: Props) {
+  const [open,              setOpen]              = useState(false)
+  const [email,             setEmail]             = useState<EmailDraft>(initialEmail)
+  const [refreshing,        setRefreshing]        = useState(false)
+  const [copied,            setCopied]            = useState(false)
+  const [selectedProductId, setSelectedProductId] = useState<string>('')  // '' = auto
 
   const slopHits  = detectSlop(email.body)
   const bodyWords = wordCount(email.body)
@@ -29,7 +33,10 @@ export default function EmailDraftButton({ initialEmail, prospectId }: Props) {
       const res = await fetch('/api/refresh-email', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prospect_id: prospectId }),
+        body:    JSON.stringify({
+          prospect_id: prospectId,
+          product_id:  selectedProductId || undefined,
+        }),
       })
       if (!res.ok) {
         const { error } = await res.json()
@@ -44,7 +51,7 @@ export default function EmailDraftButton({ initialEmail, prospectId }: Props) {
     } finally {
       setRefreshing(false)
     }
-  }, [prospectId])
+  }, [prospectId, selectedProductId])
 
   const handleCopy = useCallback(() => {
     const text = `Subject: ${email.subject}\n\n${email.body}`
@@ -162,24 +169,47 @@ export default function EmailDraftButton({ initialEmail, prospectId }: Props) {
 
             {/* Actions footer */}
             <div
-              className="flex items-center justify-between px-5 py-3 flex-shrink-0"
+              className="flex flex-col gap-2 px-5 py-3 flex-shrink-0"
               style={{ borderTop: '1px solid var(--sl-border)' }}
             >
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium disabled:opacity-50 transition-opacity hover:opacity-80"
-                style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
-              >
-                {refreshing ? 'Refreshing…' : '↺ Refresh draft'}
-              </button>
-              <button
-                onClick={handleCopy}
-                className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium transition-opacity hover:opacity-80"
-                style={{ border: 'none', background: 'var(--sl-text)', color: '#F0EDE6' }}
-              >
-                {copied ? 'Copied!' : 'Copy to clipboard'}
-              </button>
+              {/* Product selector — only shown when multiple products exist */}
+              {products.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em] flex-shrink-0" style={{ color: 'var(--sl-text3)' }}>
+                    Focus on
+                  </span>
+                  <select
+                    value={selectedProductId}
+                    onChange={e => setSelectedProductId(e.target.value)}
+                    disabled={refreshing}
+                    className="flex-1 rounded-[6px] border px-2 py-[4px] text-[11px] outline-none disabled:opacity-50"
+                    style={{ borderColor: 'var(--sl-border)', background: 'var(--sl-bg)', color: 'var(--sl-text)' }}
+                  >
+                    <option value="">Auto — most relevant</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium disabled:opacity-50 transition-opacity hover:opacity-80"
+                  style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
+                >
+                  {refreshing ? 'Refreshing…' : '↺ Refresh draft'}
+                </button>
+                <button
+                  onClick={handleCopy}
+                  className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium transition-opacity hover:opacity-80"
+                  style={{ border: 'none', background: 'var(--sl-text)', color: '#F0EDE6' }}
+                >
+                  {copied ? 'Copied!' : 'Copy to clipboard'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
