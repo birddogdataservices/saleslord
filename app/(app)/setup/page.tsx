@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SetupForm from './SetupForm'
-import type { RepProfile, Product } from '@/lib/types'
+import type { RepProfile, Product, TeamConfig } from '@/lib/types'
 
 export const metadata = { title: 'Profile & settings — SalesLord' }
 
@@ -12,9 +12,10 @@ export default async function SetupPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [{ data: profileRaw }, { data: products }] = await Promise.all([
+  const [{ data: profileRaw }, { data: products }, { data: teamConfigRaw }] = await Promise.all([
     supabase.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     supabase.from('products').select('*').order('created_at', { ascending: true }),
+    supabase.from('team_config').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   // Strip API key before passing to client — only send whether one is set
@@ -40,6 +41,7 @@ export default async function SetupPage() {
           profile={profile}
           products={(products ?? []) as Product[]}
           hasApiKey={hasApiKey}
+          teamConfig={(teamConfigRaw ?? null) as TeamConfig | null}
         />
       </div>
     </div>

@@ -98,6 +98,8 @@ create table decision_makers (
   cares_about      text,
   suggested_angle  text,
   sort_order       integer default 0,
+  targeting_tier   text not null default 'prime_target', -- prime_target | intel_only | low_signal
+  tier_reasoning   text,                                 -- one-line model rationale; null for legacy rows
   created_at       timestamptz default now()
 );
 alter table decision_makers enable row level security;
@@ -252,6 +254,25 @@ create policy "Authenticated users can read case studies"
 -- No client writes — admin routes use service role only
 
 -- ─────────────────────────────────────────
+-- Team config (singleton — one row for the whole team)
+-- Admin-managed. Stores ordered lists of targeting options (preset + custom).
+-- Research route reads from here; no per-rep targeting override.
+-- ─────────────────────────────────────────
+create table team_config (
+  id                uuid primary key default gen_random_uuid(),
+  seniority_bands   jsonb not null default '[]',  -- string[] ordered preset + custom
+  target_functions  jsonb not null default '[]',  -- string[] ordered preset + custom
+  updated_at        timestamptz default now()
+);
+alter table team_config enable row level security;
+
+-- All authenticated users can read (needed by setup page + research route)
+create policy "Authenticated users can read team config"
+  on team_config for select
+  using (auth.role() = 'authenticated');
+-- No client writes — admin routes use service role only
+
+-- ─────────────────────────────────────────
 -- Storage bucket: case-study-slides
 -- Run these steps in Supabase dashboard (Storage → New bucket):
 --   1. Name: case-study-slides
@@ -272,3 +293,4 @@ create index on api_usage          (user_id, created_at desc);
 create index on api_usage          (user_id, created_at desc) where endpoint != 'cron';
 create index on prospect_updates   (prospect_id, created_at desc);
 create index on case_studies       (created_at asc);
+create index on team_config        (updated_at desc);

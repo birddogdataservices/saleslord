@@ -1,16 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
-import type { RepProfile, Product } from '@/lib/types'
+import type { RepProfile, Product, TeamConfig } from '@/lib/types'
+
+// ── Targeting presets ─────────────────────────────────────────────────────────
+const PRESET_SENIORITY_BANDS = [
+  'C-Suite', 'SVP / EVP', 'VP', 'Senior Director', 'Director',
+  'Head of [Function]', 'Senior Manager', 'Manager', 'Individual Contributor',
+]
+const PRESET_TARGET_FUNCTIONS = [
+  'Data Engineering', 'Data Platform', 'Data Architecture', 'Analytics Engineering',
+  'Business Intelligence', 'Data Science', 'Data Governance', 'Data Management',
+  'Enterprise Architecture', 'IT / Infrastructure', 'Software Engineering',
+  'Operations', 'Product', 'Finance',
+]
 
 type Props = {
   profile: RepProfile | null
   products: Product[]
   hasApiKey: boolean
+  teamConfig: TeamConfig | null
 }
 
 function voiceStatus(samples: string) {
@@ -18,7 +31,7 @@ function voiceStatus(samples: string) {
   return 'calibrated'
 }
 
-export default function SetupForm({ profile, products, hasApiKey }: Props) {
+export default function SetupForm({ profile, products, hasApiKey, teamConfig }: Props) {
   const supabase = createClient()
 
   const [repBackground, setBackground] = useState(profile?.rep_background ?? '')
@@ -27,7 +40,53 @@ export default function SetupForm({ profile, products, hasApiKey }: Props) {
   const [apiKey,        setApiKey]     = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Targeting state — initialized from team_config, merged with presets
+  const [seniorityBands,   setSeniorityBands]   = useState<string[]>(teamConfig?.seniority_bands   ?? [])
+  const [targetFunctions,  setTargetFunctions]  = useState<string[]>(teamConfig?.target_functions  ?? [])
+  const [customBandInput,  setCustomBandInput]  = useState('')
+  const [customFuncInput,  setCustomFuncInput]  = useState('')
+  const [savingTargeting,  setSavingTargeting]  = useState(false)
+
+  // All known band/function options = presets + any saved custom values
+  const allBands = [...new Set([...PRESET_SENIORITY_BANDS, ...(teamConfig?.seniority_bands ?? [])])]
+  const allFuncs = [...new Set([...PRESET_TARGET_FUNCTIONS, ...(teamConfig?.target_functions ?? [])])]
+
   const status = voiceStatus(voiceSamples)
+
+  // Chrome ignores autoComplete hints and fills custom inputs with saved credentials.
+  // Force-clear after mount so browser autofill never sticks.
+  useEffect(() => {
+    setCustomBandInput('')
+    setCustomFuncInput('')
+  }, [])
+
+  async function saveTargeting() {
+    setSavingTargeting(true)
+    const res = await fetch('/api/admin/team-config', {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ seniority_bands: seniorityBands, target_functions: targetFunctions }),
+    })
+    const data = await res.json()
+    setSavingTargeting(false)
+    if (!res.ok) { toast.error(data.error ?? 'Failed to save targeting config.'); return }
+    toast.success('Targeting config saved.')
+  }
+
+  function toggleChip(list: string[], setList: (v: string[]) => void, value: string) {
+    setList(list.includes(value) ? list.filter(v => v !== value) : [...list, value])
+  }
+
+  function addCustomChip(
+    list: string[], setList: (v: string[]) => void,
+    input: string, setInput: (v: string) => void,
+    allOptions: string[]
+  ) {
+    const val = input.trim()
+    if (!val || allOptions.includes(val)) { setInput(''); return }
+    setList([...list, val])
+    setInput('')
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -124,7 +183,126 @@ export default function SetupForm({ profile, products, hasApiKey }: Props) {
         />
       </Section>
 
-      {/* ── 4. Anthropic API key ── */}
+      {/* ── 4. Targeting ── */}
+      <div className="flex flex-col gap-4 rounded-[10px] px-5 py-5" style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)' }}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-[13px] font-semibold" style={{ color: 'var(--sl-text)' }}>Targeting</h2>
+            <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--sl-text3)' }}>
+              Seniority and function rules used to tier decision makers on every research run.
+              Shared across the team.{' '}
+              {!profile?.is_admin && <span style={{ color: 'var(--sl-amber-t)' }}>Admin-only to edit.</span>}
+            </p>
+          </div>
+          {profile?.is_admin && (
+            <button
+              type="button"
+              onClick={saveTargeting}
+              disabled={savingTargeting}
+              className="flex-shrink-0 rounded-[6px] px-3 py-1.5 text-[11px] font-medium transition-opacity hover:opacity-90 disabled:opacity-50 cursor-pointer"
+              style={{ background: 'var(--sl-text)', color: '#F0EDE6', border: 'none' }}
+            >
+              {savingTargeting ? 'Saving…' : 'Save targeting'}
+            </button>
+          )}
+        </div>
+
+        {/* Seniority bands */}
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-medium" style={{ color: 'var(--sl-text2)' }}>Target seniority bands</p>
+          <div className="flex flex-wrap gap-1.5">
+            {allBands.map(band => {
+              const selected = seniorityBands.includes(band)
+              return (
+                <button
+                  key={band}
+                  type="button"
+                  disabled={!profile?.is_admin}
+                  onClick={() => profile?.is_admin && toggleChip(seniorityBands, setSeniorityBands, band)}
+                  className="text-[11px] px-2.5 py-1 rounded-full transition-colors"
+                  style={selected
+                    ? { background: 'var(--sl-blue-bg)', color: 'var(--sl-blue-t)', border: '1px solid var(--sl-blue-t)', fontWeight: 600 }
+                    : { background: 'var(--sl-surface2)', color: 'var(--sl-text3)', border: '1px solid var(--sl-border)', cursor: profile?.is_admin ? 'pointer' : 'default' }
+                  }
+                >
+                  {band}
+                </button>
+              )
+            })}
+          </div>
+          {profile?.is_admin && (
+            <form
+              className="flex items-center gap-2 mt-1"
+              onSubmit={e => { e.preventDefault(); addCustomChip(seniorityBands, setSeniorityBands, customBandInput, setCustomBandInput, allBands) }}
+            >
+              <input
+                type="search"
+                value={customBandInput}
+                onChange={e => setCustomBandInput(e.target.value)}
+                placeholder="Add custom band…"
+                className="rounded-[6px] px-2.5 py-1 text-[11px] outline-none flex-1"
+                style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
+              />
+              <button
+                type="submit"
+                className="text-[11px] px-2.5 py-1 rounded-[6px]"
+                style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface2)', color: 'var(--sl-text2)' }}
+              >
+                Add
+              </button>
+            </form>
+          )}
+        </div>
+
+        {/* Target functions */}
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-medium" style={{ color: 'var(--sl-text2)' }}>Target functions</p>
+          <div className="flex flex-wrap gap-1.5">
+            {allFuncs.map(fn => {
+              const selected = targetFunctions.includes(fn)
+              return (
+                <button
+                  key={fn}
+                  type="button"
+                  disabled={!profile?.is_admin}
+                  onClick={() => profile?.is_admin && toggleChip(targetFunctions, setTargetFunctions, fn)}
+                  className="text-[11px] px-2.5 py-1 rounded-full transition-colors"
+                  style={selected
+                    ? { background: 'var(--sl-teal-bg)', color: 'var(--sl-teal-t)', border: '1px solid var(--sl-teal-t)', fontWeight: 600 }
+                    : { background: 'var(--sl-surface2)', color: 'var(--sl-text3)', border: '1px solid var(--sl-border)', cursor: profile?.is_admin ? 'pointer' : 'default' }
+                  }
+                >
+                  {fn}
+                </button>
+              )
+            })}
+          </div>
+          {profile?.is_admin && (
+            <form
+              className="flex items-center gap-2 mt-1"
+              onSubmit={e => { e.preventDefault(); addCustomChip(targetFunctions, setTargetFunctions, customFuncInput, setCustomFuncInput, allFuncs) }}
+            >
+              <input
+                type="search"
+                value={customFuncInput}
+                onChange={e => setCustomFuncInput(e.target.value)}
+                placeholder="Add custom function…"
+                className="rounded-[6px] px-2.5 py-1 text-[11px] outline-none flex-1"
+                style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
+              />
+              <button
+                type="submit"
+                className="text-[11px] px-2.5 py-1 rounded-[6px]"
+                style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface2)', color: 'var(--sl-text2)' }}
+              >
+                Add
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+
+      {/* ── 5. Anthropic API key ── */}
       <Section
         title="Anthropic API key"
         hint="Required to run research and email generation. Get yours at console.anthropic.com. Stored securely — never shown again after saving."
@@ -155,7 +333,7 @@ export default function SetupForm({ profile, products, hasApiKey }: Props) {
         </div>
       </Section>
 
-      {/* ── 5. Products (read-only — managed by admin) ── */}
+      {/* ── 6. Products (read-only — managed by admin) ── */}
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between">
           <div>

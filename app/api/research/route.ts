@@ -16,6 +16,8 @@ function buildSystemPrompt(profile: {
   icp_description: string
   rep_background: string
   voice_samples: string
+  seniority_bands: string[]
+  target_functions: string[]
 }, todayISO: string, currentMonth: number): string {
   // Format products section — supports 1 or many
   const productsBlock = profile.products.length === 0
@@ -58,6 +60,20 @@ Decision maker rules:
 - suggested_angle must be specific to this person at this company — never generic role advice
 - avatar_initials: first letter of first + last name (2 chars)
 
+Targeting tier rules — the rep's target profile:
+${profile.seniority_bands.length > 0
+  ? `- Target seniority bands: ${profile.seniority_bands.join(', ')}`
+  : '- Target seniority bands: not configured — use your judgment'}
+${profile.target_functions.length > 0
+  ? `- Target functions: ${profile.target_functions.join(', ')}`
+  : '- Target functions: not configured — use your judgment'}
+For each decision maker, assign a targeting_tier:
+- "prime_target": matches target seniority AND target function — this person is worth reaching out to directly
+- "intel_only": partial match or adjacent (e.g. right function but too senior/junior, or right seniority but different function) — useful context, not a direct outreach target
+- "low_signal": neither matches well — include for completeness but unlikely to be relevant
+Also provide a one-line tier_reasoning explaining your assignment (e.g. "VP-level in Data Engineering — matches both bands and functions")
+Use judgment, not a rigid formula. A CDO who owns data engineering is prime even if CDO isn't in the band list.
+
 Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
 {
   "company": {
@@ -98,7 +114,9 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
       "role_label": "Champion | Economic buyer | Gatekeeper | End user | Influencer",
       "avatar_initials": "2 chars",
       "cares_about": "string — their specific priorities at this company right now",
-      "suggested_angle": "string — specific angle for this person, not generic role advice"
+      "suggested_angle": "string — specific angle for this person, not generic role advice",
+      "targeting_tier": "prime_target | intel_only | low_signal",
+      "tier_reasoning": "string — one-line rationale for the tier assignment"
     }
   ],
   "email": {
@@ -138,10 +156,11 @@ export async function POST(request: Request) {
     return Response.json({ error: 'query is required' }, { status: 400 })
   }
 
-  // 4. Fetch rep profile + shared products
-  const [{ data: profile }, { data: productRows }] = await Promise.all([
+  // 4. Fetch rep profile + shared products + team targeting config
+  const [{ data: profile }, { data: productRows }, { data: teamConfigRow }] = await Promise.all([
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     adminClient.from('products').select('name, description, value_props, competitors').order('created_at', { ascending: true }),
+    adminClient.from('team_config').select('seniority_bands, target_functions').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   // BYOK hard gate — decrypt stored key; no platform fallback
@@ -174,9 +193,11 @@ export async function POST(request: Request) {
   const systemPrompt = buildSystemPrompt(
     {
       products,
-      icp_description: profile.icp_description ?? '',
-      rep_background:  profile.rep_background  ?? '',
-      voice_samples:   profile.voice_samples   ?? '',
+      icp_description:  profile.icp_description ?? '',
+      rep_background:   profile.rep_background  ?? '',
+      voice_samples:    profile.voice_samples   ?? '',
+      seniority_bands:  (teamConfigRow?.seniority_bands  as string[]) ?? [],
+      target_functions: (teamConfigRow?.target_functions as string[]) ?? [],
     },
     today.toISOString().split('T')[0],
     today.getMonth() + 1
@@ -335,21 +356,26 @@ export async function POST(request: Request) {
     custom:         { bg: '#F0EEE9', text: '#6B6A64' },
   }
 
+  const VALID_TIERS = new Set(['prime_target', 'intel_only', 'low_signal'])
+
   const decisionMakers = (parsed.decision_makers ?? []).map((dm: any, i: number) => {
     const role: DmRole = dm.role ?? 'custom'
     const colors = ROLE_COLORS[role] ?? ROLE_COLORS.custom
+    const tier = VALID_TIERS.has(dm.targeting_tier) ? dm.targeting_tier : 'prime_target'
     return {
-      prospect_id:      prospect.id,
-      name:             dm.name ?? null,
-      title:            dm.title ?? null,
+      prospect_id:       prospect.id,
+      name:              dm.name ?? null,
+      title:             dm.title ?? null,
       role,
-      role_label:       dm.role_label ?? role,
-      avatar_initials:  dm.avatar_initials ?? '??',
-      avatar_color_bg:  colors.bg,
+      role_label:        dm.role_label ?? role,
+      avatar_initials:   dm.avatar_initials ?? '??',
+      avatar_color_bg:   colors.bg,
       avatar_color_text: colors.text,
-      cares_about:      dm.cares_about ?? null,
-      suggested_angle:  dm.suggested_angle ?? null,
-      sort_order:       i,
+      cares_about:       dm.cares_about ?? null,
+      suggested_angle:   dm.suggested_angle ?? null,
+      sort_order:        i,
+      targeting_tier:    tier,
+      tier_reasoning:    dm.tier_reasoning ?? null,
     }
   })
 

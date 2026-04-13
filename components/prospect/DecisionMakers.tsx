@@ -4,14 +4,29 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { ROLE_COLORS, ROLE_LABELS } from '@/lib/utils'
-import type { DecisionMaker, DmRole } from '@/lib/types'
+import type { DecisionMaker, DmRole, TargetingTier } from '@/lib/types'
 
 type Props = { decisionMakers: DecisionMaker[] }
 
 const ALL_ROLES: DmRole[] = ['champion', 'economic_buyer', 'gatekeeper', 'end_user', 'influencer', 'custom']
 
+const TIER_RANK: Record<TargetingTier, number> = {
+  prime_target: 0,
+  intel_only:   1,
+  low_signal:   2,
+}
+
+function tierOf(dm: DecisionMaker): TargetingTier {
+  return dm.targeting_tier ?? 'prime_target'
+}
+
 export default function DecisionMakers({ decisionMakers: initial }: Props) {
-  const [dms, setDms] = useState(initial)
+  const [dms, setDms] = useState(
+    [...initial].sort((a, b) => {
+      const tierDiff = TIER_RANK[tierOf(a)] - TIER_RANK[tierOf(b)]
+      return tierDiff !== 0 ? tierDiff : a.sort_order - b.sort_order
+    })
+  )
 
   async function updateRole(id: string, role: DmRole, label: string) {
     const colors = ROLE_COLORS[role]
@@ -21,10 +36,7 @@ export default function DecisionMakers({ decisionMakers: initial }: Props) {
       .update({ role, role_label: label, avatar_color_bg: colors.bg, avatar_color_text: colors.text })
       .eq('id', id)
 
-    if (error) {
-      toast.error('Failed to update role.')
-      return
-    }
+    if (error) { toast.error('Failed to update role.'); return }
     setDms(prev => prev.map(dm =>
       dm.id === id ? { ...dm, role, role_label: label, avatar_color_bg: colors.bg, avatar_color_text: colors.text } : dm
     ))
@@ -43,7 +55,7 @@ function DMCard({ dm, onRoleChange }: {
   dm: DecisionMaker
   onRoleChange: (id: string, role: DmRole, label: string) => void
 }) {
-  const [open, setOpen]         = useState(false)
+  const [open, setOpen]          = useState(false)
   const [customInput, setCustom] = useState('')
 
   return (

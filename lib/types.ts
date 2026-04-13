@@ -91,6 +91,8 @@ export type ProspectBrief = {
 
 export type DmRole = 'champion' | 'economic_buyer' | 'gatekeeper' | 'end_user' | 'influencer' | 'custom'
 
+export type TargetingTier = 'prime_target' | 'intel_only' | 'low_signal'
+
 export type DecisionMaker = {
   id: string
   prospect_id: string
@@ -104,7 +106,16 @@ export type DecisionMaker = {
   cares_about: string | null
   suggested_angle: string | null
   sort_order: number
+  targeting_tier: TargetingTier   // prime_target | intel_only | low_signal; null rows treated as prime_target
+  tier_reasoning: string | null   // one-line model rationale
   created_at: string
+}
+
+export type TeamConfig = {
+  id: string
+  seniority_bands: string[]   // ordered list — preset + custom
+  target_functions: string[]  // ordered list — preset + custom
+  updated_at: string
 }
 
 export type ProspectNote = {
