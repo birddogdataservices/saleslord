@@ -1,6 +1,58 @@
 # SalesLord — Handoff
 
-## Current version: 0.5.1 — Case Study Matcher (pending seeding test)
+## Current version: 0.7.0 — Decision Maker Targeting Tiers
+
+---
+
+## Session 9 summary (Decision Maker Targeting Tiers)
+
+### What was built
+
+Full targeting tier feature. Research prompt now tiers each decision maker based on team-level seniority band and function rules. DM cards sort automatically — prime targets first, intel/low signal below. No badges, no separate sections — position does the work.
+
+### Files created / modified
+
+| File | Change |
+|---|---|
+| `supabase/schema.sql` | Added `targeting_tier` + `tier_reasoning` to `decision_makers`; added `team_config` table + RLS + index |
+| `lib/types.ts` | Added `TargetingTier` type; `targeting_tier` + `tier_reasoning` to `DecisionMaker`; new `TeamConfig` type |
+| `app/api/admin/team-config/route.ts` | **New** — GET (any authed user) + PUT (admin-only upsert of singleton row) |
+| `app/(app)/setup/page.tsx` | Added `team_config` fetch in parallel block; passes to `SetupForm` |
+| `app/(app)/setup/SetupForm.tsx` | New Targeting section — chip selectors for seniority bands + functions, custom add inputs, admin-only edit, separate "Save targeting" button |
+| `components/prospect/DecisionMakers.tsx` | Single flat list sorted by tier rank then sort_order; no badges, no section splits |
+| `app/api/research/route.ts` | Fetches `team_config`; injects `seniority_bands` + `target_functions` into system prompt; validates and writes `targeting_tier` + `tier_reasoning` on DM insert |
+
+### Architecture decisions
+
+- **`team_config` singleton, not per-rep** — targeting rules are consistent across the team; no per-rep override needed. Admin edits via the Targeting section of `/setup`.
+- **No manual tier override on DM cards** — reps manage contacts in their CRM. This app is for initial prospecting, not contact lifecycle management.
+- **`null` targeting_tier treated as `prime_target`** — existing DMs before migration are shown as prime targets optimistically. They'll get proper tiers on next re-research.
+- **Single flat list, sort only** — tried separate "Prime targets" / "Intel only" section cards; felt disorienting. Dropped to a single list sorted by tier. Position conveys priority without explicit labeling.
+- **`type="search"` for custom chip inputs** — Chrome ignores `autoComplete="off"` and `autoComplete="new-password"` on inputs it heuristically associates with credentials. `type="search"` is the one input type Chrome won't autofill.
+- **Preset lists baked into `SetupForm`** — 9 seniority bands + 14 target functions defined as constants in the component. Custom additions are persisted to `team_config` and surfaced alongside presets on next load.
+
+### Supabase migration run this session
+
+```sql
+alter table decision_makers
+  add column if not exists targeting_tier text not null default 'prime_target',
+  add column if not exists tier_reasoning text;
+
+create table team_config (
+  id                uuid primary key default gen_random_uuid(),
+  seniority_bands   jsonb not null default '[]',
+  target_functions  jsonb not null default '[]',
+  updated_at        timestamptz default now()
+);
+alter table team_config enable row level security;
+create policy "Authenticated users can read team config"
+  on team_config for select using (auth.role() = 'authenticated');
+create index on team_config (updated_at desc);
+```
+
+### ⚠️ First-use step
+
+Go to `/setup` → Targeting section → select your target bands and functions → Save targeting. Until this is done, the research prompt will note that targeting is unconfigured and use model judgment.
 
 ---
 
@@ -399,9 +451,67 @@ create index on prospect_updates (prospect_id, created_at desc);
 - **window_status is derived, not stored** — the stored `window_status` in `timing` jsonb is now ignored by the UI. It's still written during research for potential future use but `computeWindowStatus()` is the source of truth everywhere.
 - **3 search iterations max** — Vercel's serverless timeout is the hard constraint. 3 calls ≈ 30–45s execution, leaving headroom. If brief quality suffers, the right fix is a background job pattern (Inngest), not raising the cap.
 
+---
+
+## Session 8 design decisions — Decision Maker Targeting Tiers
+
+### Feature: Targeting tiers on decision maker cards
+
+**Problem being solved:** C-suite contacts surface in research but are poor outbound targets — they rarely pick up or reply to AEs. VP and Senior Director level contacts are the real targets: enough influence to champion, enough accountability to act. The app should reflect this automatically without hiding lower-tier contacts.
+
+### Schema changes required
+
+**`decision_makers` table — add two columns:**
+```sql
+alter table decision_makers add column if not exists targeting_tier text default 'prime_target';
+-- values: prime_target | intel_only | low_signal
+alter table decision_makers add column if not exists tier_reasoning text;
+-- e.g. "VP-level, data function — matches rep targeting rules"
+```
+
+**`rep_profiles` table — add two columns (ICP section):**
+```sql
+alter table rep_profiles add column if not exists target_seniority_bands jsonb default '[]';
+-- e.g. ["VP", "Senior Director", "Director"]
+alter table rep_profiles add column if not exists target_functions jsonb default '[]';
+-- e.g. ["Data", "Analytics", "Engineering", "Operations"]
+```
+
+No changes to `prospects` table — targeting rules live at the user level, not per-prospect.
+
+### UI changes
+
+- Decision maker cards sort automatically by tier: `prime_target` first, then `intel_only`, then `low_signal`
+- Lower-tier cards get muted visual treatment (lighter text, slightly reduced weight) — fully actionable, just visually de-emphasized
+- No hiding, no gating, no manual reorder
+- Sort is automatic and permanent — `sort_order` column on `decision_makers` is written by the research route based on tier, not managed manually
+- Targeting rules (seniority bands + functions) are editable in the ICP/setup section of the rep profile — UI TBD during build, slot them in naturally alongside `icp_description`
+
+### Research prompt changes
+
+- On every research run, inject the rep's `target_seniority_bands` and `target_functions` into the system prompt as targeting constraints
+- For each decision maker returned, Claude assigns `targeting_tier` and one-line `tier_reasoning`
+- Prompt language should frame this as an informed suggestion, not a deterministic rule — Claude uses judgment, not a scoring formula
+
+### Refresh behavior
+
+- Refresh only tiers **net-new** decision makers — contacts already in the DB are never re-tiered or overwritten
+- This preserves any manual corrections made to existing tiers
+- Edge case: title changes (e.g. Director → VP) will not be re-tiered until a full re-research — acceptable for v1
+
+### Key decisions made
+
+1. Targeting rules live on `rep_profiles`, not per-prospect — rep's instinct about who picks up doesn't change account by account
+2. Manual override of individual contact tiers is supported (just edit the card) — no per-account rule override needed
+3. Refresh never overwrites existing decision maker tiers — net-new only
+4. No filter by tier in prospect log — sort order and visual weight do the work
+5. Targeting rules UI slots into the existing ICP section on the setup page — exact placement TBD during build
+
+---
+
 ## What's next (priority order)
 
-1. **Case Study Matcher** — see Session 6 spec above. Start with the Supabase migration + admin CRUD page, then the import route (verify pdf2pic on Vercel first), then matching + right column UI, then PDF export.
+1. **Case Study Matcher seeding** — code complete (Session 7); waiting on Pentaho PDF. Steps: run schema migration, create `case-study-slides` Storage bucket (private), upload PDF at `/admin/case-studies`, verify import + matching.
 2. **`/api/cron/refresh-all`** — weekly refresh + Resend digest (not urgent — cron schedule already in vercel.json)
 3. **Background job pattern** — if research quality at 3 iterations proves insufficient, move to Inngest or similar to remove the serverless timeout constraint
 4. **Follow-up route + panel** — de-prioritized; initial outreach focus only for now

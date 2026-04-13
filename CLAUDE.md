@@ -100,9 +100,10 @@ See `.env.local.example` for the full reference.
     │   └── api-key/route.ts    # POST — encrypt + store user Anthropic key ✅
     ├── admin/
     │   ├── allowed-emails/     # GET + POST + DELETE — invite management ✅
+    │   ├── team-config/route.ts          # GET + PUT — singleton targeting config ✅
     │   └── case-studies/
-    │       ├── route.ts                  # GET (list) + POST (create) + DELETE
-    │       └── import-deck/route.ts      # POST — PDF upload → extract → seed
+    │       ├── route.ts                  # GET (list) + POST (create) + DELETE ✅
+    │       └── import-deck/route.ts      # POST — PDF upload → extract → seed ✅
     ├── case-studies/
     │   ├── match/route.ts               # POST — prospect matching call
     │   ├── export-pdf/route.ts          # POST — assemble + stream PDF of selected slides
@@ -116,15 +117,34 @@ See `.env.local.example` for the full reference.
 
 See `supabase/schema.sql` for the full migration. Tables:
 
-- `rep_profiles` — one row per user; `products jsonb` array; `stripe_customer_id` stub
+- `rep_profiles` — one row per user; `stripe_customer_id` stub; `is_admin` flag
 - `allowed_emails` — access control allowlist (no RLS select policy — service role only)
 - `prospects` — one row per tracked company; upserted on `user_id + query`
 - `prospect_briefs` — one active brief per prospect; includes `stats jsonb` for stat cards
-- `decision_makers` — 3–5 per prospect, role-colored avatars
+- `decision_makers` — 3–5 per prospect, role-colored avatars; `targeting_tier` (prime_target | intel_only | low_signal) + `tier_reasoning` set by research prompt; UI sorts by tier rank then sort_order — no badges, no sections
 - `prospect_notes` — log entries; filter by state + industry
 - `follow_ups` — gated by reason (>= 10 words)
 - `api_usage` — every Anthropic call logged here with token counts + cost_usd
 - `case_studies` — shared library; admin-managed; slide images in Supabase Storage bucket `case-study-slides`
+- `team_config` — singleton table (one row); `seniority_bands` + `target_functions` jsonb string arrays; admin-managed via `/api/admin/team-config`; all reps read; research route injects into system prompt
+
+## team_config shape
+
+Singleton table — one row for the whole team. Admin-managed. Research route reads from here; no per-rep targeting override.
+
+```ts
+type TeamConfig = {
+  id: string
+  seniority_bands: string[]   // ordered — preset + custom additions
+  target_functions: string[]  // ordered — preset + custom additions
+  updated_at: string
+}
+```
+
+Preset seniority bands: C-Suite, SVP / EVP, VP, Senior Director, Director, Head of [Function], Senior Manager, Manager, Individual Contributor
+Preset target functions: Data Engineering, Data Platform, Data Architecture, Analytics Engineering, Business Intelligence, Data Science, Data Governance, Data Management, Enterprise Architecture, IT / Infrastructure, Software Engineering, Operations, Product, Finance
+
+RLS: all authenticated users can read; no client writes — `/api/admin/team-config` uses service role only.
 
 ## rep_profiles.products shape
 
@@ -164,8 +184,11 @@ RLS: all authenticated users can read; no client writes — admin routes use ser
 
 ## API routes
 
+### GET + PUT /api/admin/team-config ✅ built
+Singleton targeting config. GET: any authenticated user (used by setup page). PUT: admin-only upsert; validates arrays; fetches existing row id to upsert by pk. No Anthropic call.
+
 ### POST /api/research ✅ built
-Full prospect research. Anthropic web search tool with agentic loop. Writes to prospects, prospect_briefs, decision_makers. Logs to api_usage.
+Full prospect research. Anthropic web search tool with agentic loop. Writes to prospects, prospect_briefs, decision_makers (including targeting_tier + tier_reasoning). Fetches team_config and injects seniority_bands + target_functions into system prompt. Logs to api_usage.
 
 ### POST /api/follow-up — to build
 Follow-up touch generation. Requires `reason` >= 10 words. Reads full note history. Logs to api_usage.
@@ -264,6 +287,10 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 - Expose the `case-study-slides` Storage bucket publicly or return signed URLs to unauthenticated requests
 - Use JSX in route handler `.ts` files — if a route needs JSX (e.g. `@react-pdf/renderer`), put the component in `lib/pdf/*.tsx` and import it, then call `React.createElement()` in the route
 - Import `pdf-to-img` (or any pdfjs-dist-based package) at the top level of a route — it loads a worker via a numeric webpack chunk ID at module evaluation time, breaking Next.js Turbopack's build phase with `ERR_INVALID_ARG_TYPE`. Always use `const { pdf } = await import('pdf-to-img')` inside the handler function
+
+## Browser quirks
+
+- **Chrome autofill ignores `autoComplete="off"` and `autoComplete="new-password"`** on text inputs it heuristically associates with saved credentials (e.g. any input near the word "function"). Use `type="search"` instead — Chrome does not autofill search inputs. If the ✕ clear button looks wrong, hide it with CSS.
 
 ## Next.js 16 notes
 

@@ -13,7 +13,8 @@ Items are roughly priority-ordered within each section.
 ## 🟡 Should have (product is awkward without these)
 
 - [x] Check for Updates — `POST /api/check-updates`, append-only blurb history, `UpdateBlurbs` component, `CheckUpdatesButton` in topbar
-- [ ] `/api/cron/refresh-all` route — weekly refresh for all users, Resend digest
+- [x] **Decision maker targeting tiers** — `targeting_tier` + `tier_reasoning` on `decision_makers`; `team_config` singleton for shared seniority bands + target functions; chip UI in setup page (admin-edit, all reps read); research prompt tiers each DM; cards sort prime_target → intel_only → low_signal; single flat list, no badges or sections.
+
 - [ ] Vercel cron wired (`vercel.json` already has the schedule)
 - [ ] Product selector in "Add prospect" flow — when multiple products exist, let rep pick which to research against
 - [x] **Case Study Matcher** — built in session 7. All routes + UI complete. **⚠️ Pending seeding test** — waiting on Pentaho PDF from Jon. Steps when PDF arrives:
