@@ -4,27 +4,42 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 
 function LoginContent() {
   const searchParams = useSearchParams()
   const error        = searchParams.get('error')
 
+  const [email, setEmail]   = useState('')
+  const [sent, setSent]     = useState(false)
+  const [sending, setSending] = useState(false)
+
   async function signInWithGoogle() {
-    // Create client lazily inside the handler — avoids SSR prerender issues
     const supabase = createClient()
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
         queryParams: {
-          // Restrict the Google sign-in picker to company Workspace accounts.
           ...(process.env.NEXT_PUBLIC_ALLOWED_DOMAIN
             ? { hd: process.env.NEXT_PUBLIC_ALLOWED_DOMAIN }
             : {}),
         },
       },
     })
+  }
+
+  async function sendMagicLink(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || sending) return
+    setSending(true)
+    await fetch('/api/auth/magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    setSending(false)
+    setSent(true)
   }
 
   return (
@@ -62,6 +77,45 @@ function LoginContent() {
           <GoogleIcon />
           Sign in with Google
         </button>
+
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px" style={{ background: 'var(--sl-border)' }} />
+          <span className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>or</span>
+          <div className="flex-1 h-px" style={{ background: 'var(--sl-border)' }} />
+        </div>
+
+        {sent ? (
+          <div
+            className="text-[12px] rounded-[6px] px-3 py-3 text-center"
+            style={{ background: 'var(--sl-green-bg)', color: 'var(--sl-green-t)' }}
+          >
+            Check your inbox — link sent to {email}
+          </div>
+        ) : (
+          <form onSubmit={sendMagicLink} className="flex flex-col gap-2">
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@company.com"
+              required
+              className="rounded-[8px] px-3 py-[9px] text-[13px] outline-none w-full"
+              style={{
+                background: 'var(--sl-surface2)',
+                border: '1px solid var(--sl-border)',
+                color: 'var(--sl-text)',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={sending || !email.trim()}
+              className="rounded-[8px] py-[10px] px-4 text-[13px] font-medium transition-opacity hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: 'var(--sl-surface2)', color: 'var(--sl-text)', border: '1px solid var(--sl-border)' }}
+            >
+              {sending ? 'Sending…' : 'Send magic link'}
+            </button>
+          </form>
+        )}
 
         <p className="text-[10px] text-center text-[var(--sl-text3)]">
           Access is restricted. If you have trouble signing in,<br />contact your SalesLord admin.
