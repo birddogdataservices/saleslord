@@ -2,31 +2,61 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import type { ProspectSidebarItem } from '@/lib/types'
 import { windowStatusColor } from '@/lib/utils'
 import AddProspectInput from './AddProspectInput'
 
 type Props = {
   prospects: ProspectSidebarItem[]
+  archivedProspects: ProspectSidebarItem[]
   monthlyCostUsd: number
   isAdmin: boolean
 }
 
-// Sidebar groups prospects by window_status, matching the mockup order:
-// Window open → Approaching → Monitoring (closed / unknown)
 const GROUP_ORDER: Array<{ status: 'open' | 'approaching' | 'closed' | null; label: string }> = [
-  { status: 'open',       label: 'Window open' },
+  { status: 'open',        label: 'Window open' },
   { status: 'approaching', label: 'Approaching' },
-  { status: 'closed',     label: 'Monitoring' },
+  { status: 'closed',      label: 'Monitoring' },
 ]
 
-export default function Sidebar({ prospects, monthlyCostUsd, isAdmin }: Props) {
-  const params  = useParams()
-  const activeId = params?.id as string | undefined
-  const [search, setSearch] = useState('')
+const MIN_WIDTH = 180
+const MAX_WIDTH = 360
+const DEFAULT_WIDTH = 230
+
+export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, isAdmin }: Props) {
+  const params    = useParams()
+  const activeId  = params?.id as string | undefined
+  const [search,         setSearch]         = useState('')
+  const [showArchived,   setShowArchived]   = useState(false)
+  const [width,          setWidth]          = useState(DEFAULT_WIDTH)
+  const dragging = useRef(false)
+  const startX   = useRef(0)
+  const startW   = useRef(0)
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    dragging.current = true
+    startX.current   = e.clientX
+    startW.current   = width
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return
+      const delta = ev.clientX - startX.current
+      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startW.current + delta)))
+    }
+    const onUp = () => {
+      dragging.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [width])
 
   const filtered = prospects.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  )
+  const filteredArchived = archivedProspects.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -34,12 +64,12 @@ export default function Sidebar({ prospects, monthlyCostUsd, isAdmin }: Props) {
 
   return (
     <aside
-      className="flex flex-col flex-shrink-0 overflow-y-auto"
-      style={{ width: 210, background: 'var(--sl-sidebar)' }}
+      className="flex flex-col flex-shrink-0 overflow-y-auto relative"
+      style={{ width, background: 'var(--sl-sidebar)' }}
     >
       {/* Header */}
       <div className="px-[14px] pt-[18px] pb-[12px]" style={{ borderBottom: '1px solid #2a2a2c' }}>
-        <div className="text-[12px] font-semibold text-[#F0EDE6] tracking-[0.05em] uppercase">
+        <div className="text-[13px] font-semibold text-[#F0EDE6] tracking-[0.05em] uppercase">
           SalesLord
         </div>
         <div className="text-[11px] mt-[2px]" style={{ color: '#555' }}>
@@ -47,11 +77,16 @@ export default function Sidebar({ prospects, monthlyCostUsd, isAdmin }: Props) {
         </div>
       </div>
 
-      {/* Search */}
+      {/* Add prospect — at top */}
+      <div className="pt-[10px]" style={{ borderBottom: '1px solid #2a2a2c' }}>
+        <AddProspectInput />
+      </div>
+
+      {/* Filter search */}
       <input
-        className="mx-[12px] mt-[10px] rounded-[6px] px-[10px] py-[6px] text-[11px] outline-none"
+        className="mx-[12px] mt-[10px] rounded-[6px] px-[10px] py-[6px] text-[12px] outline-none"
         style={{ background: '#242424', border: 'none', color: '#aaa' }}
-        placeholder="Search prospects…"
+        placeholder="Filter prospects…"
         value={search}
         onChange={e => setSearch(e.target.value)}
       />
@@ -68,54 +103,36 @@ export default function Sidebar({ prospects, monthlyCostUsd, isAdmin }: Props) {
         return (
           <div key={group.label}>
             <div
-              className="text-[10px] font-semibold uppercase tracking-[0.08em] px-[14px] pt-[12px] pb-[5px]"
+              className="text-[11px] font-semibold uppercase tracking-[0.08em] px-[14px] pt-[12px] pb-[5px]"
               style={{ color: '#484844' }}
             >
               {group.label}
             </div>
-            {items.map(p => {
-              const { dot } = windowStatusColor(p.window_status)
-              const isActive = p.id === activeId
-              return (
-                <Link
-                  key={p.id}
-                  href={`/prospects/${p.id}`}
-                  className="flex items-center gap-[8px] px-[14px] py-[7px] cursor-pointer transition-colors"
-                  style={{
-                    background: isActive ? '#2c2c2e' : 'transparent',
-                  }}
-                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = '#222224' }}
-                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-                >
-                  <span
-                    className="flex-shrink-0 rounded-full"
-                    style={{ width: 7, height: 7, background: dot }}
-                  />
-                  <span
-                    className="flex-1 text-[12px] overflow-hidden text-ellipsis whitespace-nowrap"
-                    style={{ color: isActive ? '#F0EDE6' : '#b8b6b0', fontWeight: isActive ? 500 : 400 }}
-                  >
-                    {p.name}
-                  </span>
-                  {p.fy_end && (
-                    <span className="text-[10px] flex-shrink-0" style={{ color: '#484844' }}>
-                      {p.fy_end}
-                    </span>
-                  )}
-                </Link>
-              )
-            })}
+            {items.map(p => <ProspectLink key={p.id} p={p} isActive={p.id === activeId} />)}
           </div>
         )
       })}
 
-      {/* Add prospect */}
-      <div className="mt-auto pt-[10px]" style={{ borderTop: '1px solid #2a2a2c' }}>
-        <AddProspectInput />
-      </div>
+      {/* Archived toggle */}
+      {archivedProspects.length > 0 && (
+        <div className="px-[14px] pt-[10px]">
+          <button
+            onClick={() => setShowArchived(v => !v)}
+            className="text-[11px] transition-colors"
+            style={{ color: '#484844', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            onMouseEnter={e => ((e.target as HTMLElement).style.color = '#888')}
+            onMouseLeave={e => ((e.target as HTMLElement).style.color = '#484844')}
+          >
+            {showArchived ? '▾' : '▸'} {archivedProspects.length} archived
+          </button>
+          {showArchived && filteredArchived.map(p => (
+            <ProspectLink key={p.id} p={p} isActive={p.id === activeId} muted />
+          ))}
+        </div>
+      )}
 
       {/* Footer — cost badge + settings link */}
-      <div className="px-[14px] py-[12px]" style={{ borderTop: '1px solid #2a2a2c' }}>
+      <div className="mt-auto px-[14px] py-[12px]" style={{ borderTop: '1px solid #2a2a2c' }}>
         <div className="text-[10px] mb-[8px]" style={{ color: '#484844' }}>
           This month:{' '}
           <span style={{ color: '#b8b6b0' }}>
@@ -163,6 +180,44 @@ export default function Sidebar({ prospects, monthlyCostUsd, isAdmin }: Props) {
           </>
         )}
       </div>
+
+      {/* Resize handle */}
+      <div
+        onMouseDown={onMouseDown}
+        className="absolute top-0 right-0 h-full w-[4px] cursor-col-resize"
+        style={{ zIndex: 10 }}
+        onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = '#3a3a3c')}
+        onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+      />
     </aside>
+  )
+}
+
+function ProspectLink({ p, isActive, muted = false }: { p: ProspectSidebarItem; isActive: boolean; muted?: boolean }) {
+  const { dot } = windowStatusColor(p.window_status)
+  return (
+    <Link
+      href={`/prospects/${p.id}`}
+      className="flex items-center gap-[8px] px-[14px] py-[7px] cursor-pointer transition-colors"
+      style={{ background: isActive ? '#2c2c2e' : 'transparent' }}
+      onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = '#222224' }}
+      onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+    >
+      <span
+        className="flex-shrink-0 rounded-full"
+        style={{ width: 7, height: 7, background: muted ? '#3a3a3c' : dot }}
+      />
+      <span
+        className="flex-1 text-[13px] overflow-hidden text-ellipsis whitespace-nowrap"
+        style={{ color: isActive ? '#F0EDE6' : muted ? '#484844' : '#b8b6b0', fontWeight: isActive ? 500 : 400 }}
+      >
+        {p.name}
+      </span>
+      {p.fy_end && (
+        <span className="text-[11px] flex-shrink-0" style={{ color: muted ? '#333' : '#484844' }}>
+          {p.fy_end}
+        </span>
+      )}
+    </Link>
   )
 }

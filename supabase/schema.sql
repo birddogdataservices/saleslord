@@ -51,6 +51,7 @@ create table prospects (
   query            text not null,
   created_at       timestamptz default now(),
   last_refreshed_at timestamptz,
+  archived_at      timestamptz,     -- null = active; set = archived (soft delete)
   unique (user_id, query)           -- required for ON CONFLICT upsert in research route
 );
 alter table prospects enable row level security;

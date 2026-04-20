@@ -13,13 +13,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Sidebar prospects — join with latest brief to get window_status + fy_end
-  const { data: prospects } = await supabase
+  // Sidebar prospects — split into active + archived, join with latest brief for timing
+  const { data: allProspects } = await supabase
     .from('prospects')
     .select(`
       id,
       name,
       last_refreshed_at,
+      archived_at,
       prospect_briefs (
         timing
       )
@@ -48,25 +49,34 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .single()
   const isAdmin = profile?.is_admin ?? false
 
-  // Shape into ProspectSidebarItem[]
-  const sidebarItems: ProspectSidebarItem[] = (prospects ?? []).map(p => {
-    const briefs = (p as any).prospect_briefs as Array<{ timing: any }> | null
+  // Shape into ProspectSidebarItem[], split active vs archived
+  const toSidebarItem = (p: any): ProspectSidebarItem => {
+    const briefs = p.prospect_briefs as Array<{ timing: any }> | null
     const timing = briefs?.[0]?.timing ?? null
     return {
-      id:               p.id,
-      name:             p.name,
+      id:                p.id,
+      name:              p.name,
       last_refreshed_at: p.last_refreshed_at,
-      // Compute window_status live — stored value goes stale as time passes
-      window_status:    timing?.fy_end ? computeWindowStatus(timing.fy_end) : null,
-      fy_end:           timing?.fy_end
-                          ? new Date(`${timing.fy_end} 2000`).toLocaleString('en-US', { month: 'short' })
-                          : null,
+      archived_at:       p.archived_at ?? null,
+      window_status:     timing?.fy_end ? computeWindowStatus(timing.fy_end) : null,
+      fy_end:            timing?.fy_end
+                           ? new Date(`${timing.fy_end} 2000`).toLocaleString('en-US', { month: 'short' })
+                           : null,
     }
-  })
+  }
+
+  const all = (allProspects ?? []).map(toSidebarItem)
+  const sidebarItems         = all.filter(p => !p.archived_at)
+  const archivedSidebarItems = all.filter(p => !!p.archived_at)
 
   return (
     <div className="flex h-full overflow-hidden">
-      <Sidebar prospects={sidebarItems} monthlyCostUsd={monthlyCostUsd} isAdmin={isAdmin} />
+      <Sidebar
+        prospects={sidebarItems}
+        archivedProspects={archivedSidebarItems}
+        monthlyCostUsd={monthlyCostUsd}
+        isAdmin={isAdmin}
+      />
       <main className="flex-1 flex flex-col overflow-hidden">
         {children}
       </main>

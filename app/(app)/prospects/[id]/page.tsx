@@ -11,6 +11,7 @@ import EmailDraftButton from '@/components/prospect/EmailDraftButton'
 import CheckUpdatesButton from '@/components/prospect/CheckUpdatesButton'
 import UpdateBlurbs from '@/components/prospect/UpdateBlurbs'
 import ReresearchButton from '@/components/prospect/ReresearchButton'
+import ArchiveButton from '@/components/prospect/ArchiveButton'
 import type { ProspectBrief, DecisionMaker, ProspectNote, ProspectUpdate } from '@/lib/types'
 
 export default async function ProspectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,6 +73,11 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
         </div>
 
         <div className="ml-auto flex gap-[7px] items-center">
+          <ArchiveButton
+            prospectId={id}
+            isArchived={!!prospect.archived_at}
+            prospectName={prospect.name}
+          />
           {brief && (
             <a
               href={`/api/export/pdf/${id}`}

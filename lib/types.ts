@@ -41,6 +41,7 @@ export type Prospect = {
   query: string
   created_at: string
   last_refreshed_at: string | null
+  archived_at: string | null
 }
 
 export type NewsItem = {
@@ -195,4 +196,5 @@ export type ProspectFull = Prospect & {
 export type ProspectSidebarItem = Pick<Prospect, 'id' | 'name' | 'last_refreshed_at'> & {
   window_status: TimingData['window_status'] | null
   fy_end: string | null
+  archived_at: string | null
 }
