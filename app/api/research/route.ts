@@ -88,7 +88,8 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
     "stage":       { "value": "e.g. Public · SNOW or Series B", "context": "e.g. IPO Sept 2020" },
     "hq_location": "City, ST — US headquarters only, e.g. Atlanta, GA. null if unknown or non-US HQ."
   },
-  "snapshot": "Two paragraphs separated by \\n\\n. Paragraph 1 (2-3 sentences): what the company does and how it makes money. Paragraph 2 (2-3 sentences): what is happening with them right now — current pressures, strategic moves, recent news relevant to this rep.",
+  "snapshot_business": "2-3 sentences: what the company does and how it makes money",
+  "snapshot_current": "2-3 sentences: what is happening right now — current pressures, strategic moves, recent news relevant to this rep",
   "initiatives": ["string — strategic initiative relevant to the rep's product"],
   "pain_signals": ["string — pain or pressure tied specifically to the rep's product"],
   "tech_signals": ["tool or platform name only"],
@@ -319,7 +320,7 @@ export async function POST(request: Request) {
     .from('prospect_briefs')
     .insert({
       prospect_id:    prospect.id,
-      snapshot:       parsed.snapshot ?? null,
+      snapshot:       [parsed.snapshot_business, parsed.snapshot_current].filter(Boolean).join('\n\n') || parsed.snapshot || null,
       initiatives:    parsed.initiatives ?? [],
       pain_signals:   parsed.pain_signals ?? [],
       tech_signals:   parsed.tech_signals ?? [],
