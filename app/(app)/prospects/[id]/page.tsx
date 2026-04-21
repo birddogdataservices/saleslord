@@ -68,6 +68,12 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                   <span>{brief.stats.stage.value}</span>
                 </>
               )}
+              {brief.stats?.hq_location && (
+                <>
+                  <span style={{ color: 'var(--sl-border)' }}>·</span>
+                  <span>{brief.stats.hq_location}</span>
+                </>
+              )}
             </div>
           )}
         </div>

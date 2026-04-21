@@ -82,10 +82,11 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
     "tags": ["industry tag", "size tag"]
   },
   "stats": {
-    "revenue":    { "value": "e.g. $3.4B or Unknown", "context": "e.g. +33% YoY" },
-    "headcount":  { "value": "e.g. ~7,000 or Unknown", "context": "e.g. +8% past 12 mo" },
-    "open_roles": { "value": "e.g. 47 or Unknown", "context": "e.g. 14 in engineering" },
-    "stage":      { "value": "e.g. Public · SNOW or Series B", "context": "e.g. IPO Sept 2020" }
+    "revenue":     { "value": "e.g. $3.4B or Unknown", "context": "e.g. +33% YoY" },
+    "headcount":   { "value": "e.g. ~7,000 or Unknown", "context": "e.g. +8% past 12 mo" },
+    "open_roles":  { "value": "e.g. 47 or Unknown", "context": "e.g. 14 in engineering" },
+    "stage":       { "value": "e.g. Public · SNOW or Series B", "context": "e.g. IPO Sept 2020" },
+    "hq_location": "City, ST — US headquarters only, e.g. Atlanta, GA. null if unknown or non-US HQ."
   },
   "snapshot": "2-3 sentence overview relevant to the rep's ICP and product",
   "initiatives": ["string — strategic initiative relevant to the rep's product"],

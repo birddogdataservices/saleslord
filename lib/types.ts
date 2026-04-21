@@ -69,10 +69,11 @@ export type StatCard = {
 }
 
 export type CompanyStats = {
-  revenue:    StatCard | null
-  headcount:  StatCard | null
-  open_roles: StatCard | null
-  stage:      StatCard | null
+  revenue:      StatCard | null
+  headcount:    StatCard | null
+  open_roles:   StatCard | null
+  stage:        StatCard | null
+  hq_location:  string | null   // e.g. "Atlanta, GA"
 }
 
 export type ProspectBrief = {
