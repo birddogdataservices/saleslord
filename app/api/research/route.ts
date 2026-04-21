@@ -88,7 +88,7 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
     "stage":       { "value": "e.g. Public · SNOW or Series B", "context": "e.g. IPO Sept 2020" },
     "hq_location": "City, ST — US headquarters only, e.g. Atlanta, GA. null if unknown or non-US HQ."
   },
-  "snapshot": "2-3 sentence overview relevant to the rep's ICP and product",
+  "snapshot": "Two paragraphs separated by \\n\\n. Paragraph 1 (2-3 sentences): what the company does and how it makes money. Paragraph 2 (2-3 sentences): what is happening with them right now — current pressures, strategic moves, recent news relevant to this rep.",
   "initiatives": ["string — strategic initiative relevant to the rep's product"],
   "pain_signals": ["string — pain or pressure tied specifically to the rep's product"],
   "tech_signals": ["tool or platform name only"],

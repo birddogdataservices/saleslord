@@ -139,8 +139,10 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                 {/* Snapshot */}
                 {brief.snapshot && (
                   <SCard title="Snapshot">
-                    <div className="px-[14px] py-[12px]">
-                      <p className="text-[12px] leading-[1.7]" style={{ color: '#444' }}>{brief.snapshot}</p>
+                    <div className="px-[14px] py-[12px] flex flex-col gap-[10px]">
+                      {brief.snapshot.split('\n\n').map((para, i) => (
+                        <p key={i} className="text-[12px] leading-[1.7]" style={{ color: '#444' }}>{para}</p>
+                      ))}
                     </div>
                   </SCard>
                 )}
