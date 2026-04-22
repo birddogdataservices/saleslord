@@ -6,6 +6,8 @@ A B2B sales prospecting assistant for enterprise AEs. It replaces the gap betwee
 
 Not a sequencing tool. Does not automate outreach. Intelligence and drafting layer the rep controls entirely.
 
+**Roadmap note:** This app will eventually be renamed ProspectLord and live as one tool within a broader SalesLord platform alongside other sales tools (e.g. deal coaching, competitive intel, call prep).
+
 ## Tech stack
 
 - **Framework**: Next.js 16 (App Router), TypeScript
