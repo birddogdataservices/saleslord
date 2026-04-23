@@ -96,6 +96,25 @@ See `.env.local.example` for the full reference.
 - Vercel auto-deploys on every push to `main`
 - Supabase auth redirect URLs must include the Vercel domain in Authentication → URL Configuration
 
+## Versioning
+
+Semver tags on `main` at meaningful milestones. `package.json` version is not
+kept in sync until Stage 2 (when packages are published). Tags are the source
+of truth.
+
+Current version: **v0.3.0** (CELord Session 2 — real collectors + cron routes)
+
+**Tag after merging to main:**
+```bash
+git checkout main && git pull
+git tag v0.X.0 && git push origin v0.X.0
+```
+
+Increment guide:
+- **patch** (0.x.1) — bug fixes, copy changes, minor UI tweaks
+- **minor** (0.x+1.0) — new feature or session milestone (new collector, new app section, enrichment, etc.)
+- **major** (1.0.0) — Stage 2 monorepo restructure / ProspectLord rename
+
 ## Next.js 16 notes (apply to both apps)
 
 - Middleware file is `proxy.ts` at root; export function must be named `proxy`.
