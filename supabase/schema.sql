@@ -295,3 +295,135 @@ create index on api_usage          (user_id, created_at desc) where endpoint != 
 create index on prospect_updates   (prospect_id, created_at desc);
 create index on case_studies       (created_at asc);
 create index on team_config        (updated_at desc);
+
+-- ═════════════════════════════════════════
+-- CELord — Shared platform tables
+-- Shared across ProspectLord and CELord.
+-- All writes go through API routes (service role).
+-- RLS allows authenticated reads only.
+-- ═════════════════════════════════════════
+
+-- ─────────────────────────────────────────
+-- Organizations
+-- ─────────────────────────────────────────
+create table organizations (
+  id                     uuid primary key default gen_random_uuid(),
+  name                   text not null,
+  domain                 text,
+  org_type               text not null default 'unknown',  -- end_user | integrator | vendor | training_provider | unknown
+  industry               text,
+  approx_size            text,                             -- Enterprise | Mid-market | SMB
+  customer_status        text not null default 'unknown',  -- unknown | prospect | active_customer | former_customer | failed_enterprise_conversion | do_not_contact
+  customer_status_source text,                             -- csv_import | crm_sync | manual
+  customer_status_at     timestamptz,
+  parent_org_id          uuid references organizations(id),
+  created_at             timestamptz default now(),
+  updated_at             timestamptz default now()
+);
+alter table organizations enable row level security;
+create policy "Authenticated users can read organizations"
+  on organizations for select using (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- Signals (raw evidence from collectors)
+-- ─────────────────────────────────────────
+create table signals (
+  id             uuid primary key default gen_random_uuid(),
+  source         text not null,         -- github | shodan | jobs | forum | stackoverflow | conference
+  source_url     text not null,
+  snippet        text not null,
+  org_hint       text not null,         -- raw org name/domain before entity resolution
+  org_domain     text,                  -- domain extracted from signal (if any)
+  country        text,
+  state_province text,
+  signal_date    timestamptz,           -- date of the underlying artifact
+  collected_at   timestamptz default now()
+);
+alter table signals enable row level security;
+create policy "Authenticated users can read signals"
+  on signals for select using (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- Signal links (org ↔ signal with provenance)
+-- ─────────────────────────────────────────
+create table signal_links (
+  id         uuid primary key default gen_random_uuid(),
+  org_id     uuid references organizations(id) on delete cascade not null,
+  signal_id  uuid references signals(id) on delete cascade not null,
+  confidence numeric(3,2) not null default 1.0,  -- 0.00–1.00
+  method     text not null,                       -- domain_exact | fuzzy_name | llm_assisted | manual
+  created_at timestamptz default now(),
+  unique (org_id, signal_id)
+);
+alter table signal_links enable row level security;
+create policy "Authenticated users can read signal links"
+  on signal_links for select using (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- Locations (billing HQ, offices, signal origins)
+-- Territory filters match against billing_hq rows.
+-- ─────────────────────────────────────────
+create table locations (
+  id             uuid primary key default gen_random_uuid(),
+  org_id         uuid references organizations(id) on delete cascade not null,
+  label          text not null,  -- billing_hq | office | signal_origin
+  country        text not null,
+  state_province text,
+  city           text,
+  created_at     timestamptz default now()
+);
+alter table locations enable row level security;
+create policy "Authenticated users can read locations"
+  on locations for select using (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- Enrichment runs (LLM enrichment cache)
+-- Keyed by org + run date. Haiku 4.5 first pass;
+-- Sonnet 4.6 re-run for high-value orgs (post-v0).
+-- ─────────────────────────────────────────
+create table enrichment_runs (
+  id                 uuid primary key default gen_random_uuid(),
+  org_id             uuid references organizations(id) on delete cascade not null,
+  model              text not null,
+  billing_hq_country text,
+  billing_hq_state   text,
+  billing_hq_city    text,
+  org_type           text,
+  parent_org_name    text,
+  confidence         numeric(3,2) not null default 0.50,
+  ran_at             timestamptz default now()
+);
+alter table enrichment_runs enable row level security;
+create policy "Authenticated users can read enrichment runs"
+  on enrichment_runs for select using (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- Org status history
+-- Tracks every status change for re-engagement targeting.
+-- failed_enterprise_conversion orgs with fresh CE signals are
+-- prime re-engagement candidates.
+-- ─────────────────────────────────────────
+create table org_status_history (
+  id         uuid primary key default gen_random_uuid(),
+  org_id     uuid references organizations(id) on delete cascade not null,
+  status     text not null,  -- matches customer_status values
+  source     text not null,  -- csv_import | crm_sync | manual | celord_signal
+  note       text,
+  changed_at timestamptz default now()
+);
+alter table org_status_history enable row level security;
+create policy "Authenticated users can read org status history"
+  on org_status_history for select using (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- CELord indexes
+-- ─────────────────────────────────────────
+create index on organizations      (customer_status, updated_at desc);
+create index on organizations      (domain) where domain is not null;
+create index on signals            (source, collected_at desc);
+create index on signals            (country, state_province);
+create index on signal_links       (org_id, signal_id);
+create index on signal_links       (signal_id);
+create index on locations          (org_id, label);
+create index on enrichment_runs    (org_id, ran_at desc);
+create index on org_status_history (org_id, changed_at desc);
