@@ -1,98 +1,110 @@
 # CELord — Handoff
 
-## Current state: Session 1 complete — foundation built
+## Current state: Session 2 complete — real collectors built
 
-CELord v0 Session 1 is done. The architecture is in place: domain types,
-stub collectors with fixture data, scoring, DB migrations, top ribbon, and
-a working ranked list UI at `/celord/prospects`. Next up is Session 2
-(real collectors).
+CELord v0 Session 2 is done. All three collectors now have real implementations
+that activate when the corresponding API keys are present in `.env.local`.
+Cron routes are wired up and scheduled. Next up is Session 3 (entity resolution
++ enrichment + UI reading from DB).
 
-See `docs/celord/CLAUDE.md` for full architectural context and the staged plan.
-See `docs/prospectlord/` for the existing ProspectLord app's documentation
-(untouched during CELord v0 work).
+See `docs/celord/CLAUDE.md` for full architectural context.
+See `docs/prospectlord/` for the existing ProspectLord app (untouched).
 
 ## Repo structure decisions (locked)
 
-- No `src/` directory. New CELord-specific code lives at the repo root
-  alongside existing ProspectLord folders:
+- No `src/` directory. CELord-specific code at repo root:
   - `core/` — shared domain model (package-in-waiting)
   - `signals/` — collectors, enrichment, scoring (package-in-waiting)
   - `app/celord/` — CELord routes (real route segment, not a route group)
 - Existing `app/(app)/`, `components/`, `lib/` are untouched.
-- Navigation: `components/PlatformRibbon.tsx` — top ribbon in root layout,
-  tabs for ProspectLord (`/`) and CELord (`/celord/prospects`).
+- Navigation: `components/PlatformRibbon.tsx` — top ribbon in root layout.
 
-## Session 1 summary
-
-### What was built
+## Session 1 summary (foundation)
 
 | File | What |
 |---|---|
 | `CLAUDE.md` (root) | Rewritten — shared platform context only |
-| `HANDOFF.md` (root) | Pointer doc — CELord active, ProspectLord stable |
-| `docs/prospectlord/` | Three sub-docs migrated from root |
-| `docs/celord/` | Three spec files, updated for Option A paths |
-| `components/PlatformRibbon.tsx` | ProspectLord/CELord tab strip (client component) |
-| `app/layout.tsx` | Ribbon wired in, body restructured to flex-col |
-| `core/types.ts` | Organization, Signal, Location, OrgType, CustomerStatus, etc. |
+| `docs/celord/` | Three spec files |
+| `components/PlatformRibbon.tsx` | ProspectLord/CELord tab strip |
+| `app/layout.tsx` | Ribbon wired in |
+| `core/types.ts` | Organization, Signal, Location, OrgType, CustomerStatus |
 | `signals/collectors/types.ts` | Collector, RawSignal, CollectorConfig interfaces |
-| `signals/collectors/github.ts` | Stub — 7 realistic fixture signals |
-| `signals/collectors/shodan.ts` | Stub — 5 fixture signals with server banners |
-| `signals/collectors/jobs.ts` | Stub — 8 fixture signals from job postings |
 | `signals/scoring.ts` | 4-dimension composite scorer + groupAndScore() |
 | `app/celord/layout.tsx` | Minimal CELord layout |
-| `app/celord/prospects/page.tsx` | Server component — runs stubs, scores, renders |
-| `components/celord/ProspectsTable.tsx` | Sortable table, territory filter, CSV export, expandable evidence |
-| `supabase/schema.sql` | CELord tables appended (organizations, signals, signal_links, locations, enrichment_runs, org_status_history) |
+| `app/celord/prospects/page.tsx` | Server component — runs collectors, scores, renders |
+| `components/celord/ProspectsTable.tsx` | Sortable table, territory filter, CSV export |
+| `supabase/schema.sql` | CELord tables appended |
 
-### Architecture decisions made
+## Session 2 summary (real collectors)
 
-- **No `src/` directory** — `core/` and `signals/` live at repo root alongside
-  `lib/` and `components/`. Stage 2 extraction is equally mechanical either way.
-- **`app/celord/` not `app/(celord)/`** — route groups strip the segment from
-  the URL, which would collide with ProspectLord's `/prospects` route. Real
-  route segment gives clean `/celord/*` URLs.
-- **Stub-first collectors** — early return on missing API key, returns hardcoded
-  fixtures. Full pipeline (scoring, UI) works without any credentials. Flip to
-  live by removing the early return when keys are in `.env.local`.
-- **Light theme for CELord** — white background, black/gray text. Visually
-  distinct from ProspectLord's dark theme.
+| File | What |
+|---|---|
+| `signals/collectors/github.ts` | Real GitHub code search (extension:ktr/kjb + pom.xml); stubs when no GITHUB_TOKEN |
+| `signals/collectors/shodan.ts` | Real Shodan host search (http.title:"Pentaho User Console"); stubs when no SHODAN_API_KEY |
+| `signals/collectors/jobs.ts` | Real SerpApi (Google Jobs) + Adzuna fallback; stubs when no keys |
+| `signals/persist.ts` | NEW — shared DB write helper (signals + org resolution + signal_links) |
+| `app/api/celord/collect/github/route.ts` | NEW — cron route, daily 02:00 UTC |
+| `app/api/celord/collect/shodan/route.ts` | NEW — cron route, daily 02:30 UTC |
+| `app/api/celord/collect/jobs/route.ts` | NEW — cron route, daily 03:00 UTC |
+| `vercel.json` | Updated — three CELord cron schedules + function timeouts added |
 
-### ⚠️ Supabase migration required
+### Architecture decisions made in Session 2
 
-Run the CELord migration block from `supabase/schema.sql` in the Supabase
-SQL editor before Session 2. The UI works without it (fixture data is in-memory)
-but real collector writes will fail without the tables.
+- **Stub-first preserved** — each real collector returns fixtures when no key is
+  configured. The UI at `/celord/prospects` still works without credentials.
+- **Dedup by `source_url`** — `persistSignals()` skips signals already in DB,
+  so re-running a cron is safe.
+- **Simple entity resolution** — domain-exact match, then case-insensitive name
+  match, then create. Full fuzzy/LLM resolution is Session 3.
+- **Confidence levels** — domain-exact links get 0.90; name-only gets 0.70.
+- **Cloud provider handling (Shodan)** — when the ASN org is a cloud provider
+  (AWS, Azure, etc.), fall back to PTR hostname for org identity.
+- **Staffing agency filtering (Jobs)** — known staffing firms are skipped so
+  the hiring org name isn't polluted with Randstad/Manpower/etc.
+- **GitHub rate limit handling** — 2.1s sleep between requests; watches
+  `X-RateLimit-Remaining`, sleeps to reset time if < 3 remaining.
+- **GitHub dedup by repo** — counts .ktr/.kjb/pom hits per repo, emits one
+  signal per repo with a summary snippet.
+
+### ⚠️ Supabase migration still required
+
+Run the CELord migration block from `supabase/schema.sql` in the Supabase SQL
+editor before the cron routes can write to the DB. The UI still works without
+it (fixture data is in-memory).
 
 ### Local dev note
 
 When running from a worktree, copy `.env.local` from the main repo root into
-the worktree directory and run `npm run dev` from the worktree. The Turbopack
-workspace root warning is harmless — suppress it by setting `turbopack.root`
-in `next.config.ts` if desired.
+the worktree directory and run `npm run dev` from the worktree.
 
-## Session 2 plan (real collectors)
+To test a cron route manually:
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/celord/collect/github
+```
 
-1. **GitHub collector** — flip stub when `GITHUB_TOKEN` present. Real GitHub
-   code search API: `search/code?q=extension:ktr`, `extension:kjb`,
-   `pentaho-kettle` in Maven pom.xml. Handle pagination + 10 req/min rate limit.
-2. **Shodan collector** — flip stub when `SHODAN_API_KEY` present. Probe actual
-   Pentaho server fingerprints first (see open questions below). Handle free-tier
-   pagination limits.
-3. **Jobs collector** — flip stub when `SERPAPI_KEY` or Adzuna keys present.
-   Queries: "Pentaho", "Kettle ETL", "Pentaho Data Integration", "PDI developer".
-4. **Cron routes** — `/api/celord/collect/github`, `/shodan`, `/jobs`. Add to
-   `vercel.json` cron schedules.
+## Session 3 plan (entity resolution + enrichment + UI from DB)
 
-## Open questions for Session 2
+1. **Real entity resolution** — fuzzy name matching, LLM-assisted resolution
+   for ambiguous cases. Replace the v0 name-ilike stub in `signals/persist.ts`.
+2. **Enrichment** — Haiku 4.5 LLM pass to determine billing HQ (country,
+   state/province, city), org type (end_user/integrator/vendor), industry.
+   Write results to `enrichment_runs` table.
+3. **UI reads from DB** — update `/celord/prospects/page.tsx` to query the
+   `organizations` + `signal_links` + `enrichment_runs` tables instead of
+   calling collectors inline. Collectors become background-only (cron).
+4. **Cron enrichment route** — `/api/celord/enrich` processes orgs that
+   haven't been enriched yet (or where enrichment is stale).
 
-- Exact Shodan query strings — probe what HTTP banners Pentaho servers actually
-  expose before committing to specific queries.
-- GitHub code search pagination — 10 req/min unauthenticated, 30 authenticated.
-  Plan for multi-page results.
-- SerpApi vs Adzuna — test both for job coverage on Pentaho queries; pick winner.
-- Vercel timeout — Shodan sweeps may need chunking or a background worker if
-  free-tier result volume is large.
+## Open questions resolved in Session 2
+
+- **Shodan query** — `http.title:"Pentaho User Console"` confirmed as primary
+  fingerprint. Secondary `http.html:"/pentaho/Home"` available for Freelancer tier.
+- **GitHub pagination** — 2 pages × 3 queries = 6 requests, with 2.1s sleeps.
+  Stays within 30 req/min authenticated limit.
+- **SerpApi vs Adzuna** — implemented both; SerpApi is primary (Google Jobs
+  has better global coverage), Adzuna is fallback. Add both keys to use both.
+- **Vercel timeout** — GitHub cron gets 60s (pagination + rate limit waits);
+  Shodan and Jobs get 30s each. No chunking needed at free-tier volumes.
 
 ## Definition of done for v0
 

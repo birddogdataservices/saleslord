@@ -3,6 +3,18 @@
     {
       "path": "/api/cron/refresh-all",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/celord/collect/github",
+      "schedule": "0 2 1 * *"
+    },
+    {
+      "path": "/api/celord/collect/shodan",
+      "schedule": "30 2 1 * *"
+    },
+    {
+      "path": "/api/celord/collect/jobs",
+      "schedule": "0 3 1 * *"
     }
   ],
   "functions": {
@@ -11,6 +23,9 @@
     "app/api/refresh-email/route.ts": { "maxDuration": 30 },
     "app/api/admin/case-studies/import-deck/route.ts": { "maxDuration": 120 },
     "app/api/case-studies/match/route.ts": { "maxDuration": 30 },
-    "app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 }
+    "app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 },
+    "app/api/celord/collect/github/route.ts": { "maxDuration": 60 },
+    "app/api/celord/collect/shodan/route.ts": { "maxDuration": 30 },
+    "app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 }
   }
 }
