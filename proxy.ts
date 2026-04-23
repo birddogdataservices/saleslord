@@ -4,6 +4,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 // Routes that don't require authentication
 const PUBLIC_PATHS = ['/login', '/auth/callback', '/access-denied']
 
+// Cron routes authenticate via Bearer CRON_SECRET — bypass Supabase auth
+const CRON_PATHS = ['/api/celord/collect/']
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -31,6 +34,11 @@ export async function proxy(request: NextRequest) {
 
   // Allow public paths through
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+    return supabaseResponse
+  }
+
+  // Cron routes use Bearer CRON_SECRET — skip Supabase auth
+  if (CRON_PATHS.some(p => pathname.startsWith(p))) {
     return supabaseResponse
   }
 
