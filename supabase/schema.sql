@@ -427,3 +427,11 @@ create index on signal_links       (signal_id);
 create index on locations          (org_id, label);
 create index on enrichment_runs    (org_id, ran_at desc);
 create index on org_status_history (org_id, changed_at desc);
+
+-- ═════════════════════════════════════════
+-- Migration: Session 3 enrichment expansion
+-- Run in Supabase SQL editor (safe to run once — columns may already exist if re-run).
+-- ═════════════════════════════════════════
+alter table enrichment_runs
+  add column if not exists industry   text,
+  add column if not exists approx_size text;  -- Enterprise | Mid-market | SMB | unknown

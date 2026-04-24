@@ -15,6 +15,10 @@
     {
       "path": "/api/celord/collect/jobs",
       "schedule": "0 3 1 * *"
+    },
+    {
+      "path": "/api/celord/enrich",
+      "schedule": "0 4 1 * *"
     }
   ],
   "functions": {
@@ -26,6 +30,7 @@
     "app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 },
     "app/api/celord/collect/github/route.ts": { "maxDuration": 60 },
     "app/api/celord/collect/shodan/route.ts": { "maxDuration": 30 },
-    "app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 }
+    "app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 },
+    "app/api/celord/enrich/route.ts": { "maxDuration": 300 }
   }
 }

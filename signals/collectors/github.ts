@@ -80,17 +80,23 @@ async function runGitHubSearch(token: string): Promise<RawSignal[]> {
           `https://api.github.com/search/code?q=${encodeURIComponent(q)}&per_page=30&page=${page}`,
           { headers },
         )
-      } catch {
+      } catch (err) {
+        console.error('[CELord/github] Network error', { query: q, page, err })
         break
       }
 
       if (resp.status === 403 || resp.status === 429) {
         const resetAt = Number(resp.headers.get('X-RateLimit-Reset') ?? '0') * 1000
         const waitMs = Math.max(0, resetAt - Date.now()) + 1000
+        console.warn('[CELord/github] Rate limit hit — sleeping', { query: q, page, status: resp.status, waitMs })
         await sleep(Math.min(waitMs, 65_000))
         break
       }
-      if (!resp.ok) break
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '')
+        console.error('[CELord/github] HTTP error', { query: q, page, status: resp.status, body: body.slice(0, 300) })
+        break
+      }
 
       const remaining = Number(resp.headers.get('X-RateLimit-Remaining') ?? '10')
       if (remaining < 3) await sleep(65_000)

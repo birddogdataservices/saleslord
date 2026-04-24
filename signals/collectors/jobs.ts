@@ -70,7 +70,7 @@ const SERPAPI_QUERIES = [
 
 async function runSerpApi(apiKey: string): Promise<RawSignal[]> {
   const signals: RawSignal[] = []
-  const seen = new Set<string>() // dedupe by company+title
+  const seen = new Set<string>()
 
   for (const q of SERPAPI_QUERIES) {
     let resp: Response
@@ -78,13 +78,23 @@ async function runSerpApi(apiKey: string): Promise<RawSignal[]> {
       resp = await fetch(
         `https://serpapi.com/search.json?engine=google_jobs&q=${encodeURIComponent(q)}&api_key=${encodeURIComponent(apiKey)}&num=10`,
       )
-    } catch {
+    } catch (err) {
+      console.error('[CELord/jobs/serpapi] Network error', { query: q, err })
       continue
     }
 
-    if (!resp.ok) continue
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      console.error('[CELord/jobs/serpapi] HTTP error', { query: q, status: resp.status, body: body.slice(0, 300) })
+      if (resp.status === 429) console.warn('[CELord/jobs/serpapi] Quota exhausted — consider adding Adzuna as fallback')
+      continue
+    }
 
     const data = await resp.json() as SerpApiResponse
+    if (data.error) {
+      console.error('[CELord/jobs/serpapi] API error', { query: q, error: data.error })
+      continue
+    }
     if (!data.jobs_results?.length) continue
 
     const now = new Date().toISOString()
@@ -136,11 +146,17 @@ async function runAdzuna(appId: string, appKey: string): Promise<RawSignal[]> {
         resp = await fetch(
           `https://api.adzuna.com/v1/api/jobs/${country}/search/1?app_id=${encodeURIComponent(appId)}&app_key=${encodeURIComponent(appKey)}&what=${encodeURIComponent(q)}&results_per_page=20&content-type=application/json`,
         )
-      } catch {
+      } catch (err) {
+        console.error('[CELord/jobs/adzuna] Network error', { query: q, country, err })
         continue
       }
 
-      if (!resp.ok) continue
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '')
+        console.error('[CELord/jobs/adzuna] HTTP error', { query: q, country, status: resp.status, body: body.slice(0, 300) })
+        if (resp.status === 429) console.warn('[CELord/jobs/adzuna] Quota exhausted')
+        continue
+      }
 
       const data = await resp.json() as AdzunaResponse
       if (!data.results?.length) continue

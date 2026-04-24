@@ -17,6 +17,12 @@ BACKLOG as v0 ships.
   via SerpApi or Adzuna. Post-v0: add company career page scraping for
   orgs in the pipeline, tune employer-name extraction, handle staffing-agency
   reposts that obscure the real hiring org.
+- **SerpApi → Adzuna quota fallback.** Currently the jobs collector uses
+  whichever key is present at startup — it does not fall back to Adzuna if
+  SerpApi returns a 429 mid-run. Add runtime fallback: catch 429 from SerpApi
+  and retry the same query via Adzuna if both keys are configured. Build only
+  if SerpApi quota becomes a recurring problem — Vercel logs will surface it
+  clearly with the current error logging.
 
 ## Platform evolution (the SalesLord platform)
 
@@ -111,6 +117,15 @@ Triggered when genuine component duplication exists, or platform-level features
 - **Collector health dashboard** — last run time, signals emitted, errors.
 - **Secondary / tertiary Shodan queries** as fingerprint knowledge improves.
   Censys as a second provider.
+
+## Revenue band configuration
+
+- **Team revenue band definitions.** The UI currently shows "Enterprise / Mid-market / SMB"
+  as plain labels. Add actual revenue ranges to the band labels (e.g. "Enterprise (>$250M)")
+  once the team's standard bands are confirmed. Ranges should be configurable — likely stored
+  in `team_config` so an admin can update them without a deploy. The enrichment prompt in
+  `signals/enrichment.ts` should also be updated to use the team-specific thresholds so
+  Haiku classifies consistently with how the team defines each band.
 
 ## UI and workflow
 

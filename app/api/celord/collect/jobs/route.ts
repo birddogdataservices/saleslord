@@ -15,13 +15,6 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const hasSerpApi = !!process.env.SERPAPI_KEY
-  const hasAdzuna = !!(process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY)
-
-  if (!hasSerpApi && !hasAdzuna) {
-    return Response.json({ error: 'No jobs API key configured (SERPAPI_KEY or ADZUNA_APP_ID/ADZUNA_APP_KEY)' }, { status: 422 })
-  }
-
   const config = {
     serpApiKey:   process.env.SERPAPI_KEY,
     adzunaAppId:  process.env.ADZUNA_APP_ID,
@@ -33,9 +26,10 @@ export async function GET(request: Request) {
   const adminClient = createAdminClient()
   const result = await persistSignals(signals, adminClient)
 
+  const provider = config.serpApiKey ? 'serpapi' : config.adzunaAppId ? 'adzuna' : 'fixture'
   return Response.json({
     ok: true,
-    provider: hasSerpApi ? 'serpapi' : 'adzuna',
+    provider,
     signals: signals.length,
     ...result,
   })
