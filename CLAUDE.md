@@ -103,7 +103,7 @@ Semver tags on `main` at meaningful milestones. `package.json` version is not
 kept in sync until Stage 2 (when packages are published). Tags are the source
 of truth.
 
-Current version: **v0.3.0** (CELord Session 2 — real collectors + cron routes)
+Current version: **v0.4.0** (CELord Session 3 — entity resolution, enrichment, UI from DB)
 
 **Tag after merging to main:**
 ```bash
