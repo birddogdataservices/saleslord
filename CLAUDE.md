@@ -80,6 +80,7 @@ DAILY_CALL_LIMIT                  # Default 25 — max Anthropic calls per user 
 RESEND_API_KEY                    # Server-side only
 CRON_SECRET                       # Authenticates Vercel cron requests
 NEXT_PUBLIC_APP_URL               # e.g. https://saleslord-theta.vercel.app
+ANTHROPIC_API_KEY                 # Server-side only — CELord cron/enrichment (not BYOK)
 # CELord collectors (add when flipping stubs to real):
 # GITHUB_TOKEN / SHODAN_API_KEY / SERPAPI_KEY (or ADZUNA_APP_ID + ADZUNA_APP_KEY)
 # Stripe (wire when ready):

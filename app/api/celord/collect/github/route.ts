@@ -15,10 +15,6 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!process.env.GITHUB_TOKEN) {
-    return Response.json({ error: 'GITHUB_TOKEN not configured' }, { status: 422 })
-  }
-
   const config = { githubToken: process.env.GITHUB_TOKEN }
   const signals = await githubCollector(config)
 

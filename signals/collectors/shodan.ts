@@ -62,11 +62,18 @@ async function runShodanSearch(apiKey: string): Promise<RawSignal[]> {
     resp = await fetch(
       `https://api.shodan.io/shodan/host/search?key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(PRIMARY_QUERY)}&page=1`,
     )
-  } catch {
+  } catch (err) {
+    console.error('[CELord/shodan] Network error — falling back to fixtures', { err })
     return SHODAN_FIXTURES
   }
 
-  if (!resp.ok) return SHODAN_FIXTURES
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '')
+    console.error('[CELord/shodan] HTTP error — falling back to fixtures', { status: resp.status, body: body.slice(0, 300) })
+    if (resp.status === 401) console.warn('[CELord/shodan] Invalid API key')
+    if (resp.status === 429) console.warn('[CELord/shodan] Query credit limit reached')
+    return SHODAN_FIXTURES
+  }
 
   const data = await resp.json() as ShodanSearchResult
   const now = new Date().toISOString()

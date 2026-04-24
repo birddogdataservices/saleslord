@@ -15,10 +15,6 @@ export async function GET(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!process.env.SHODAN_API_KEY) {
-    return Response.json({ error: 'SHODAN_API_KEY not configured' }, { status: 422 })
-  }
-
   const config = { shodanApiKey: process.env.SHODAN_API_KEY }
   const signals = await shodanCollector(config)
 
