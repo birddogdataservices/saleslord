@@ -1,6 +1,6 @@
 # CELord — Handoff
 
-## Current state: Session 5 complete — signal quality + Shodan removal + UX polish
+## Current state: Session 6 complete — Stack Overflow collector
 
 CELord v0 is feature-complete. The full pipeline plus workflow UI is live:
 collectors → DB → entity resolution → enrichment → UI → status management → CRM import.
@@ -200,11 +200,43 @@ SERPAPI_KEY         # Job postings (or ADZUNA_APP_ID + ADZUNA_APP_KEY)
 
 **6. Verify** — `/celord/prospects` — org list renders, Type column shows after enrichment, status filter working.
 
+## Session 6 summary (Stack Overflow collector)
+
+| File | What |
+|---|---|
+| `signals/collectors/stackoverflow.ts` | NEW — Stack Exchange API; searches SO for Pentaho/Kettle questions (last 12mo); emits signals only for users whose profile `website_url` resolves to a company domain |
+| `signals/collectors/types.ts` | `stackoverflowApiKey` added to `CollectorConfig` |
+| `app/api/celord/collect/stackoverflow/route.ts` | NEW — cron route, monthly on the 1st at 02:15 UTC |
+| `vercel.json` | SO cron + 30s function timeout added |
+| `app/celord/admin/page.tsx` | Stack Overflow job card added between Jobs and Enrichment |
+| `app/api/celord/admin/trigger/route.ts` | `stackoverflow` case added to POST handler |
+
+### Architecture decisions made in Session 6
+
+- **Org extraction via `website_url`** — SO user profiles lack a structured "employer" field. `website_url` is the most reliable org anchor; signals are only emitted when the URL resolves to a non-personal, non-social, non-vendor domain. This keeps signal quality high at the cost of recall (users without a company website are dropped).
+- **`org_hint` = `org_domain` = extracted domain** — domain-anchored hints flow into entity resolution's `domain_exact` path (highest confidence: 0.90 link confidence). Enrichment then fills in the real org name.
+- **No API key required** — Stack Exchange API works without a key at 300 req/day/IP. With `STACKOVERFLOW_API_KEY` (free to register at stackapps.com), quota rises to 10,000/day. A monthly run needs ~20 API calls, so the free tier is sufficient.
+- **12-month `fromdate` window, deduped by `source_url`** — each run fetches the last 12 months of questions. The DB deduplication (by `source_url`) skips already-seen questions on subsequent runs, so there's no cost to re-fetching.
+- **Max 3 questions per user per run** — caps signal volume from prolific individual SO users; each question is a separate signal (different URL) but linked to the same org row in the DB.
+- **Quota guard** — collector stops early (returns signals collected so far) if `quota_remaining` drops below 10. Prevents hitting zero and breaking other tools sharing the IP quota.
+
+### ⚠️ Production go-live checklist (updated for Session 6)
+
+**Optional — register a Stack Apps key** (recommended if running on shared Vercel IPs):
+1. Go to https://stackapps.com/apps/oauth/register
+2. Fill in any name/URL (this is a public client key, not secret)
+3. Copy the "Key" value
+4. Add `STACKOVERFLOW_API_KEY=<key>` to Vercel env vars
+
+Without the key the collector still works — just capped at 300 req/day across Vercel's shared IPs.
+
+All prior production steps from Sessions 3–5 still apply (see above).
+
 ## Post-v0 backlog
 
 See `docs/celord/BACKLOG.md`. Top items:
-1. Stack Overflow collector (free, structured, tag-based — next logical source after GitHub + Jobs)
-2. Watchlist + email alerts on new signals
-3. Pentaho community forum collector
-4. Sonnet 4.6 re-run tier for high-value low-confidence orgs
+1. Watchlist + email alerts on new signals
+2. Pentaho community forum collector
+3. Sonnet 4.6 re-run tier for high-value low-confidence orgs
+4. SO collector: expand org extraction to parse `about_me` HTML for employer mentions (increases recall for users without a website_url)
 5. False-positive rate check on top-50 after org filter (manual review)

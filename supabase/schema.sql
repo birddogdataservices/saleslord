@@ -313,7 +313,7 @@ create table organizations (
   org_type               text not null default 'unknown',  -- end_user | integrator | vendor | training_provider | unknown
   industry               text,
   approx_size            text,                             -- Enterprise | Mid-market | SMB
-  customer_status        text not null default 'unknown',  -- unknown | prospect | active_customer | former_customer | failed_enterprise_conversion | do_not_contact | irrelevant
+  customer_status        text not null default 'unknown',  -- unknown | prospect | active_customer | former_customer | failed_enterprise_conversion | do_not_contact | irrelevant | lead_created_in_crm
   customer_status_source text,                             -- csv_import | crm_sync | manual
   customer_status_at     timestamptz,
   parent_org_id          uuid references organizations(id),

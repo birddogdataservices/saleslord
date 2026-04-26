@@ -21,6 +21,7 @@ export type CollectorConfig = {
   serpApiKey?: string
   adzunaAppId?: string
   adzunaAppKey?: string
+  stackoverflowApiKey?: string
 }
 
 export type Collector = (config: CollectorConfig) => Promise<RawSignal[]>

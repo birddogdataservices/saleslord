@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { CustomerStatus, SignalSource } from '@/core/types'
 import { OrgStatusActions } from '@/components/celord/OrgStatusActions'
+import { STATUS_BADGE } from '@/components/celord/statusConfig'
 
 // ── DB row shapes ──────────────────────────────────────────────────────────────
 
@@ -90,14 +91,6 @@ const ORG_TYPE_LABEL: Record<string, string> = {
   unknown:           'Unknown',
 }
 
-const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  active_customer:              { label: 'Customer',     cls: 'bg-green-100 text-green-700' },
-  former_customer:              { label: 'Former',       cls: 'bg-gray-100 text-gray-600' },
-  failed_enterprise_conversion: { label: 'Failed conv.', cls: 'bg-orange-100 text-orange-700' },
-  prospect:                     { label: 'Prospect',     cls: 'bg-blue-100 text-blue-700' },
-  do_not_contact:               { label: 'Do not contact', cls: 'bg-red-100 text-red-700' },
-  unknown:                      { label: 'Unknown',      cls: 'bg-gray-50 text-gray-400' },
-}
 
 const STATUS_SOURCE_LABEL: Record<string, string> = {
   csv_import: 'CSV import',
@@ -158,7 +151,8 @@ export default async function OrgDetailPage({
   )
 
   const billingHq = org.locations.find(l => l.label === 'billing_hq')
-  const statusBadge = STATUS_BADGE[org.customer_status] ?? STATUS_BADGE.unknown
+  const statusBadge = STATUS_BADGE[org.customer_status as CustomerStatus]
+    ?? { label: 'Unknown', cls: 'bg-gray-50 text-gray-400' }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-auto bg-white">
@@ -294,7 +288,7 @@ export default async function OrgDetailPage({
             </h2>
             <div className="space-y-2">
               {statusHistory.map((h, i) => {
-                const badge = STATUS_BADGE[h.status] ?? STATUS_BADGE.unknown
+                const badge = STATUS_BADGE[h.status as CustomerStatus] ?? STATUS_BADGE.unknown
                 return (
                   <div key={i} className="flex items-start gap-3 text-sm">
                     <span className="text-gray-400 shrink-0 w-28">{fmt(h.changed_at)}</span>

@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import type { ScoredOrg } from '@/signals/scoring'
 import type { SignalSource } from '@/core/types'
+import { STATUS_OPTIONS, STATUS_BADGE } from './statusConfig'
 
 export type ProspectRow = ScoredOrg & {
   orgId?: string
@@ -30,17 +31,7 @@ const SOURCE_COLOR: Record<SignalSource, string> = {
   conference:    'bg-teal-100 text-teal-700',
 }
 
-// ── Status picker ────────────────────────────────────────────────────────────
-
-const STATUS_OPTIONS: { value: string; label: string; cls: string }[] = [
-  { value: 'prospect',                     label: 'Prospect',         cls: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-  { value: 'active_customer',              label: 'Customer',         cls: 'bg-green-100 text-green-700 hover:bg-green-200' },
-  { value: 'former_customer',              label: 'Former customer',  cls: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
-  { value: 'failed_enterprise_conversion', label: 'Failed conv.',     cls: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
-  { value: 'irrelevant',                   label: 'Irrelevant',       cls: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' },
-  { value: 'do_not_contact',               label: 'Do not contact',   cls: 'bg-red-100 text-red-700 hover:bg-red-200' },
-  { value: 'unknown',                      label: 'Clear status',     cls: 'bg-white text-gray-400 hover:bg-gray-50 border border-gray-200' },
-]
+// STATUS_OPTIONS and STATUS_BADGE imported from ./statusConfig
 
 function StatusPicker({
   orgId,
@@ -95,14 +86,6 @@ const ORG_TYPE_LABEL: Record<string, string> = {
   unknown:          'Unknown',
 }
 
-const CUSTOMER_STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  active_customer:                { label: 'Customer',    cls: 'bg-green-100 text-green-700' },
-  former_customer:                { label: 'Former',      cls: 'bg-gray-100 text-gray-600' },
-  failed_enterprise_conversion:   { label: 'Failed conv.', cls: 'bg-orange-100 text-orange-700' },
-  prospect:                       { label: 'Prospect',    cls: 'bg-blue-100 text-blue-700' },
-  irrelevant:                     { label: 'Irrelevant',  cls: 'bg-yellow-100 text-yellow-700' },
-  unknown:                        { label: '',            cls: '' },
-}
 
 // ── Multi-select dropdown ─────────────────────────────────────────────────────
 
@@ -183,6 +166,7 @@ const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'active_customer',              label: 'Customer' },
   { value: 'former_customer',              label: 'Former customer' },
   { value: 'failed_enterprise_conversion', label: 'Failed conv.' },
+  { value: 'lead_created_in_crm',           label: 'Lead in CRM' },
   { value: 'irrelevant',                   label: 'Irrelevant' },
   { value: 'do_not_contact',               label: 'Do not contact' },
 ]
@@ -256,7 +240,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [industryFilter, setIndustryFilter] = useState<Set<string>>(new Set())
   const [sizeFilter, setSizeFilter] = useState<Set<string>>(new Set())
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set(['do_not_contact', 'irrelevant']))
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set(['do_not_contact', 'irrelevant', 'lead_created_in_crm']))
   // Local status overrides — populated after inline status changes
   const [statusOverrides, setStatusOverrides] = useState<Map<string, string>>(new Map())
 
@@ -436,7 +420,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
             {visible.map(org => {
               const key = rowKey(org)
               const currentStatus = statusOverrides.get(key) ?? org.customerStatus ?? 'unknown'
-              const statusBadge = CUSTOMER_STATUS_BADGE[currentStatus]
+              const statusBadge = STATUS_BADGE[currentStatus as keyof typeof STATUS_BADGE]
               return (
                 <React.Fragment key={key}>
                   <tr
