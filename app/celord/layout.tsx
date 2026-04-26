@@ -3,7 +3,7 @@
 // No sidebar for CELord — full-width content.
 export default function CelordLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+    <div className="h-full flex flex-col overflow-hidden">
       {children}
     </div>
   )

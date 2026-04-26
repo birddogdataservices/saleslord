@@ -171,14 +171,15 @@ false positives (Pentaho Portugal), integrators vs. end users, signal decay.
 
 Real credentials needed when flipping to live:
 - `GITHUB_TOKEN` — personal access token for code search API
-- `SHODAN_API_KEY` — free-tier Shodan account
 - `SERPAPI_KEY` or `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — job postings
+
+Note: Shodan was removed in Session 5. Self-hosted exposed servers correlate with
+poor security posture, not enterprise purchase intent. Enterprise buyers run behind VPNs.
 
 ## CELord-specific env vars
 
 ```
 GITHUB_TOKEN          # GitHub PAT for code search API
-SHODAN_API_KEY        # Shodan free-tier API key
 SERPAPI_KEY           # SerpApi key for job postings (OR use Adzuna below)
 ADZUNA_APP_ID         # Adzuna app ID (alternative to SerpApi)
 ADZUNA_APP_KEY        # Adzuna app key

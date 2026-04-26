@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic'
 
+import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { scoreOrg } from '@/signals/scoring'
 import type { RawSignal } from '@/signals/collectors/types'
@@ -51,6 +52,43 @@ type OrgRow = {
   enrichment_runs: EnrichmentRow[]
 }
 
+// ── Shared header ─────────────────────────────────────────────────────────────
+
+function PageHeader({ unenriched = 0 }: { unenriched?: number }) {
+  return (
+    <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0 bg-white">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Pentaho CE Prospects</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Organizations showing signals of Pentaho Community Edition usage
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {unenriched > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 bg-amber-50">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+            <span className="text-sm text-amber-700">
+              {unenriched} org{unenriched !== 1 ? 's' : ''} pending enrichment
+            </span>
+          </div>
+        )}
+        <Link
+          href="/celord/import"
+          className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          Import CSV
+        </Link>
+        <Link
+          href="/celord/admin"
+          className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          Admin
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export default async function CelordProspectsPage() {
   const adminClient = createAdminClient()
 
@@ -69,22 +107,12 @@ export default async function CelordProspectsPage() {
 
   if (!hasDb) {
     return (
-      <div className="flex flex-col h-full overflow-hidden bg-white">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">Pentaho CE Prospects</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Organizations showing signals of Pentaho Community Edition usage
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-gray-500">
-          <p className="text-base font-medium">No prospects yet</p>
-          <p className="text-sm text-gray-400 max-w-sm text-center">
-            Trigger a collector cron to populate the database, or run{' '}
-            <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">
-              curl -H &quot;Authorization: Bearer $CRON_SECRET&quot; /api/celord/collect/github
-            </code>
+      <div className="flex flex-col flex-1 min-h-0 bg-white">
+        <PageHeader />
+        <div className="flex flex-col items-center justify-center flex-1 gap-3">
+          <p className="text-base font-medium text-gray-600">No signal data yet</p>
+          <p className="text-sm text-gray-400 max-w-xs text-center leading-relaxed">
+            Use the <Link href="/celord/admin" className="underline underline-offset-2 hover:text-gray-700">Admin panel</Link> to run signal collection, then come back here to see results.
           </p>
         </div>
       </div>
@@ -113,12 +141,10 @@ export default async function CelordProspectsPage() {
 
     const scored = scoreOrg(org.name, signals)
 
-    // Prefer billing_hq location from enrichment; fall back to signal-derived
     const billingHq = org.locations.find(l => l.label === 'billing_hq')
-    const country      = billingHq?.country       ?? scored.country
+    const country       = billingHq?.country        ?? scored.country
     const stateProvince = billingHq?.state_province ?? scored.stateProvince
 
-    // Latest enrichment confidence
     const latestEnrichment = org.enrichment_runs
       .sort((a, b) => b.ran_at.localeCompare(a.ran_at))[0]
 
@@ -140,27 +166,8 @@ export default async function CelordProspectsPage() {
   const unenriched = rows.filter(r => r.enrichmentConfidence === null).length
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-white">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Pentaho CE Prospects</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Organizations showing signals of Pentaho Community Edition usage
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {unenriched > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 bg-amber-50">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-              <span className="text-sm text-amber-700">
-                {unenriched} org{unenriched !== 1 ? 's' : ''} pending enrichment
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
+    <div className="flex flex-col flex-1 min-h-0 bg-white">
+      <PageHeader unenriched={unenriched} />
       <ProspectsTable orgs={rows} />
     </div>
   )

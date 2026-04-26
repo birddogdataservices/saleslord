@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import type { ScoredOrg } from '@/signals/scoring'
 import type { SignalSource } from '@/core/types'
 
@@ -15,7 +16,6 @@ export type ProspectRow = ScoredOrg & {
 
 const SOURCE_LABEL: Record<SignalSource, string> = {
   github:        'GitHub',
-  shodan:        'Shodan',
   jobs:          'Job posting',
   forum:         'Forum',
   stackoverflow: 'Stack Overflow',
@@ -24,7 +24,6 @@ const SOURCE_LABEL: Record<SignalSource, string> = {
 
 const SOURCE_COLOR: Record<SignalSource, string> = {
   github:        'bg-purple-100 text-purple-700',
-  shodan:        'bg-red-100 text-red-700',
   jobs:          'bg-blue-100 text-blue-700',
   forum:         'bg-amber-100 text-amber-700',
   stackoverflow: 'bg-orange-100 text-orange-700',
@@ -38,6 +37,7 @@ const STATUS_OPTIONS: { value: string; label: string; cls: string }[] = [
   { value: 'active_customer',              label: 'Customer',         cls: 'bg-green-100 text-green-700 hover:bg-green-200' },
   { value: 'former_customer',              label: 'Former customer',  cls: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
   { value: 'failed_enterprise_conversion', label: 'Failed conv.',     cls: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
+  { value: 'irrelevant',                   label: 'Irrelevant',       cls: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' },
   { value: 'do_not_contact',               label: 'Do not contact',   cls: 'bg-red-100 text-red-700 hover:bg-red-200' },
   { value: 'unknown',                      label: 'Clear status',     cls: 'bg-white text-gray-400 hover:bg-gray-50 border border-gray-200' },
 ]
@@ -100,6 +100,7 @@ const CUSTOMER_STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   former_customer:                { label: 'Former',      cls: 'bg-gray-100 text-gray-600' },
   failed_enterprise_conversion:   { label: 'Failed conv.', cls: 'bg-orange-100 text-orange-700' },
   prospect:                       { label: 'Prospect',    cls: 'bg-blue-100 text-blue-700' },
+  irrelevant:                     { label: 'Irrelevant',  cls: 'bg-yellow-100 text-yellow-700' },
   unknown:                        { label: '',            cls: '' },
 }
 
@@ -176,6 +177,67 @@ function MultiSelect({
   )
 }
 
+const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'unknown',                      label: 'Unknown' },
+  { value: 'prospect',                     label: 'Prospect' },
+  { value: 'active_customer',              label: 'Customer' },
+  { value: 'former_customer',              label: 'Former customer' },
+  { value: 'failed_enterprise_conversion', label: 'Failed conv.' },
+  { value: 'irrelevant',                   label: 'Irrelevant' },
+  { value: 'do_not_contact',               label: 'Do not contact' },
+]
+
+function StatusMultiSelect({ selected, onChange }: { selected: Set<string>; onChange: (next: Set<string>) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  function toggle(val: string) {
+    const next = new Set(selected)
+    if (next.has(val)) next.delete(val)
+    else next.add(val)
+    onChange(next)
+  }
+
+  const summary = selected.size === 0
+    ? 'Nothing'
+    : STATUS_FILTER_OPTIONS.filter(o => selected.has(o.value)).map(o => o.label).join(', ')
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-sm bg-white border border-gray-300 rounded px-2 py-1 text-gray-800 flex items-center gap-1.5 min-w-[120px] max-w-[220px]"
+      >
+        <span className="flex-1 text-left truncate">{summary}</span>
+        <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute z-20 top-full mt-1 left-0 bg-white border border-gray-200 rounded shadow-md min-w-[180px]">
+          {STATUS_FILTER_OPTIONS.map(opt => (
+            <label key={opt.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.has(opt.value)}
+                onChange={() => toggle(opt.value)}
+                className="accent-gray-700"
+              />
+              <span className="text-sm text-gray-800">{opt.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function scoreBadge(score: number) {
   if (score >= 70) return 'bg-green-100 text-green-700'
   if (score >= 50) return 'bg-amber-100 text-amber-700'
@@ -194,6 +256,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [industryFilter, setIndustryFilter] = useState<Set<string>>(new Set())
   const [sizeFilter, setSizeFilter] = useState<Set<string>>(new Set())
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set(['do_not_contact', 'irrelevant']))
   // Local status overrides — populated after inline status changes
   const [statusOverrides, setStatusOverrides] = useState<Map<string, string>>(new Map())
 
@@ -228,11 +291,10 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
 
   const visible = useMemo(() => {
     let rows = [...orgs]
-    // Hide DNC rows immediately after status change (page-level filter handles on reload)
     rows = rows.filter(o => {
       const key = rowKey(o)
-      const status = statusOverrides.get(key) ?? o.customerStatus
-      return status !== 'do_not_contact'
+      const status = statusOverrides.get(key) ?? o.customerStatus ?? 'unknown'
+      return !statusFilter.has(status)
     })
     if (countryFilter.size > 0) rows = rows.filter(o => o.country && countryFilter.has(o.country))
     if (stateFilter.size > 0) rows = rows.filter(o => o.stateProvince && stateFilter.has(o.stateProvince))
@@ -247,7 +309,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
       return sortDir === 'desc' ? -cmp : cmp
     })
     return rows
-  }, [orgs, countryFilter, stateFilter, typeFilter, industryFilter, sizeFilter, sortKey, sortDir, statusOverrides])
+  }, [orgs, countryFilter, stateFilter, typeFilter, industryFilter, sizeFilter, statusFilter, sortKey, sortDir, statusOverrides])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -295,7 +357,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
   )
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Filter bar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50 shrink-0 flex-wrap">
         <span className="text-sm font-medium text-gray-600">Territory</span>
@@ -340,6 +402,10 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
             <MultiSelect label="Sizes" options={sizes} selected={sizeFilter} onChange={setSizeFilter} />
           </>
         )}
+        <>
+          <span className="text-sm font-medium text-gray-600 ml-2">Hide</span>
+          <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
+        </>
         <span className="text-sm text-gray-400 ml-1">{visible.length} orgs</span>
         <button
           onClick={exportCsv}
@@ -350,7 +416,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="w-full text-base border-collapse">
           <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
             <tr>
@@ -419,15 +485,22 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
                           )}
                         </div>
                         {org.orgId && (
-                          <div className="mb-4">
+                          <div className="mb-4 flex items-start justify-between gap-4">
                             <StatusPicker
                               orgId={org.orgId}
                               current={currentStatus}
                               onChanged={next => {
                                 setStatusOverrides(prev => new Map(prev).set(key, next))
-                                if (next === 'do_not_contact') setExpanded(null)
+                                if (statusFilter.has(next)) setExpanded(null)
                               }}
                             />
+                            <Link
+                              href={`/celord/prospects/${org.orgId}`}
+                              onClick={e => e.stopPropagation()}
+                              className="text-sm text-gray-400 hover:text-gray-700 underline underline-offset-2 shrink-0"
+                            >
+                              Details →
+                            </Link>
                           </div>
                         )}
                         <div className="flex flex-col gap-2">

@@ -70,17 +70,23 @@ function getAnthropicClient(): Anthropic {
 }
 
 async function llmIsSameOrg(candidateName: string, signalHint: string): Promise<boolean> {
-  const client = getAnthropicClient()
-  const msg = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 16,
-    messages: [{
-      role: 'user',
-      content: `Are "${candidateName}" and "${signalHint}" the same organization? Reply only YES or NO.`,
-    }],
-  })
-  const text = msg.content[0].type === 'text' ? msg.content[0].text.trim().toUpperCase() : 'NO'
-  return text.startsWith('YES')
+  try {
+    const client = getAnthropicClient()
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 16,
+      messages: [{
+        role: 'user',
+        content: `Are "${candidateName}" and "${signalHint}" the same organization? Reply only YES or NO.`,
+      }],
+    })
+    const text = msg.content[0].type === 'text' ? msg.content[0].text.trim().toUpperCase() : 'NO'
+    return text.startsWith('YES')
+  } catch {
+    // Credit exhaustion or API error — safe fallback: treat as different org (creates a new row).
+    // Worse than a duplicate, but the persist loop continues rather than crashing.
+    return false
+  }
 }
 
 // ─────────────────────────────────────────

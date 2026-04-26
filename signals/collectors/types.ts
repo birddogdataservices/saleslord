@@ -18,7 +18,6 @@ export type RawSignal = {
 
 export type CollectorConfig = {
   githubToken?: string
-  shodanApiKey?: string
   serpApiKey?: string
   adzunaAppId?: string
   adzunaAppKey?: string
