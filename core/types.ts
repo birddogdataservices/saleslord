@@ -16,10 +16,10 @@ export type CustomerStatus =
   | 'former_customer'
   | 'failed_enterprise_conversion'
   | 'do_not_contact'
+  | 'irrelevant'
 
 export type SignalSource =
   | 'github'
-  | 'shodan'
   | 'jobs'
   | 'forum'
   | 'stackoverflow'

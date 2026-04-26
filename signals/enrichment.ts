@@ -142,19 +142,34 @@ export type EnrichOneResult = {
 
 export async function enrichOrg(input: EnrichmentInput): Promise<EnrichOneResult> {
   const anthropic = getClient()
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 300,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildUserPrompt(input) }],
-  })
+  const MAX_ATTEMPTS = 3
 
-  const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
-  return {
-    output: parseResponse(text),
-    inputTokens: msg.usage.input_tokens,
-    outputTokens: msg.usage.output_tokens,
+  let lastErr: unknown
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const msg = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 300,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: buildUserPrompt(input) }],
+      })
+
+      const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+      return {
+        output: parseResponse(text),
+        inputTokens: msg.usage.input_tokens,
+        outputTokens: msg.usage.output_tokens,
+      }
+    } catch (err: unknown) {
+      lastErr = err
+      const status = (err as { status?: number })?.status
+      const retryable = status === 429 || status === 529 || status === 402
+      if (!retryable || attempt === MAX_ATTEMPTS - 1) throw err
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1))) // 2s, 4s
+    }
   }
+
+  throw lastErr
 }
 
 // ─────────────────────────────────────────

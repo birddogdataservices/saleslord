@@ -1,11 +1,10 @@
 import type { Collector, RawSignal } from './types'
 
 // GitHub Code Search collector.
-// Returns GITHUB_FIXTURES when no token is configured (stub-first pattern).
-// With a token: searches for .ktr/.kjb files and pom.xml pentaho-kettle deps.
+// Requires GITHUB_TOKEN — returns [] when not configured.
 // Rate limit: 30 req/min authenticated — sleep 2.1s between requests.
 export const githubCollector: Collector = async (config) => {
-  if (!config.githubToken) return GITHUB_FIXTURES
+  if (!config.githubToken) return []
   return runGitHubSearch(config.githubToken)
 }
 
@@ -19,6 +18,16 @@ const VENDOR_OWNERS = new Set([
 ])
 
 const NOISE_REPO_RE = /\b(tutorial|example|demo|sample|training|course|workshop|learn|how[-_]?to|guide|practice|book|template)\b/i
+
+// ─────────────────────────────────────────
+// Quality filters
+// ─────────────────────────────────────────
+
+// Repos not pushed to since this date are treated as stale (> ~4 years old).
+const FRESHNESS_CUTOFF = '2021-01-01T00:00:00Z'
+
+// Repos smaller than this (in KB) are likely toy / placeholder projects.
+const MIN_REPO_SIZE_KB = 10
 
 // ─────────────────────────────────────────
 // Types
@@ -41,6 +50,17 @@ interface GHSearchResponse {
   items: GHItem[]
 }
 
+interface GHRepoMeta {
+  pushed_at: string       // ISO timestamp of last push
+  size: number            // repo size in KB
+  stargazers_count: number
+}
+
+interface GHOwnerMeta {
+  name: string | null     // display name ("Maricopa County IT")
+  location: string | null // free-text ("Phoenix, AZ, USA")
+}
+
 interface RepoAccumulator {
   fullName: string
   ownerLogin: string
@@ -56,8 +76,8 @@ interface RepoAccumulator {
 // ─────────────────────────────────────────
 
 const QUERIES = [
-  { q: 'extension:ktr NOT fork:true', field: 'ktrCount' },
-  { q: 'extension:kjb NOT fork:true', field: 'kjbCount' },
+  { q: 'extension:ktr NOT fork:true size:>500', field: 'ktrCount' },   // >500 bytes = non-trivial
+  { q: 'extension:kjb NOT fork:true size:>500', field: 'kjbCount' },
   { q: 'pentaho-kettle filename:pom.xml', field: 'pomCount' },
 ] as const
 
@@ -106,6 +126,7 @@ async function runGitHubSearch(token: string): Promise<RawSignal[]> {
       for (const item of data.items) {
         const repo = item.repository
         if (repo.fork) continue
+        if (repo.owner.type !== 'Organization') continue
         if (VENDOR_OWNERS.has(repo.owner.login.toLowerCase())) continue
         if (NOISE_REPO_RE.test(repo.full_name)) continue
 
@@ -129,115 +150,132 @@ async function runGitHubSearch(token: string): Promise<RawSignal[]> {
     }
   }
 
-  const now = new Date().toISOString()
-  return Array.from(repoMap.values()).map((repo): RawSignal => ({
-    source: 'github',
-    source_url: repo.htmlUrl,
-    snippet: buildSnippet(repo),
-    org_hint: repo.ownerLogin,
-    org_domain: null,
-    country: null,
-    state_province: null,
-    signal_date: null,
-    collected_at: now,
-  }))
+  // ── Fetch repo + owner metadata ───────────────────────────────────────────────
+  // Repos API has a 5000/hr rate limit (vs 30/min for code search) — no sleep needed.
+  // Owner profiles are cached — one call per unique owner, not per repo.
+
+  const ownerCache = new Map<string, GHOwnerMeta>()
+  const signals: RawSignal[] = []
+  const collectedAt = new Date().toISOString()
+
+  for (const repo of repoMap.values()) {
+    const meta = await fetchRepoMeta(repo.fullName, headers)
+
+    if (meta) {
+      if (meta.pushed_at < FRESHNESS_CUTOFF) {
+        console.info(`[CELord/github] Skipping stale repo: ${repo.fullName} (last pushed ${meta.pushed_at.slice(0, 10)})`)
+        continue
+      }
+      if (meta.size < MIN_REPO_SIZE_KB) {
+        console.info(`[CELord/github] Skipping tiny repo: ${repo.fullName} (${meta.size}KB)`)
+        continue
+      }
+    }
+
+    // Fetch owner profile (cached per login)
+    if (!ownerCache.has(repo.ownerLogin)) {
+      ownerCache.set(repo.ownerLogin, await fetchOwnerMeta(repo.ownerLogin, headers))
+    }
+    const owner = ownerCache.get(repo.ownerLogin)!
+
+    const { country, stateProvince } = parseLocation(owner.location)
+
+    signals.push({
+      source: 'github',
+      source_url: repo.htmlUrl,
+      snippet: buildSnippet(repo, meta ?? null, owner),
+      org_hint: owner.name ?? repo.ownerLogin,
+      org_domain: null,
+      country,
+      state_province: stateProvince,
+      signal_date: meta?.pushed_at ?? null,
+      collected_at: collectedAt,
+    })
+  }
+
+  return signals
 }
 
-function buildSnippet(repo: RepoAccumulator): string {
+async function fetchRepoMeta(fullName: string, headers: Record<string, string>): Promise<GHRepoMeta | null> {
+  try {
+    const resp = await fetch(`https://api.github.com/repos/${fullName}`, { headers })
+    if (!resp.ok) return null
+    const data = await resp.json() as { pushed_at: string; size: number; stargazers_count: number }
+    return { pushed_at: data.pushed_at, size: data.size, stargazers_count: data.stargazers_count }
+  } catch {
+    return null
+  }
+}
+
+async function fetchOwnerMeta(login: string, headers: Record<string, string>): Promise<GHOwnerMeta> {
+  try {
+    const resp = await fetch(`https://api.github.com/users/${login}`, { headers })
+    if (!resp.ok) return { name: null, location: null }
+    const data = await resp.json() as { name: string | null; location: string | null }
+    return { name: data.name || null, location: data.location || null }
+  } catch {
+    return { name: null, location: null }
+  }
+}
+
+// ── Location parsing ──────────────────────────────────────────────────────────
+// GitHub location is free-text. Parse common patterns for US states and CA provinces.
+
+const US_STATES = new Set([
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC',
+])
+
+const CA_PROVINCES = new Set(['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'])
+
+function parseLocation(raw: string | null): { country: string | null; stateProvince: string | null } {
+  if (!raw) return { country: null, stateProvince: null }
+
+  const upper = raw.toUpperCase()
+
+  // Look for explicit country markers
+  const isCanada  = /\bCANADA\b/.test(upper) || /\bCA\b/.test(raw.split(',').pop()?.trim() ?? '')
+  const isUSA     = /\b(USA|UNITED STATES|U\.S\.A?\.?)\b/.test(upper)
+
+  // Extract two-letter abbreviations from comma-separated parts (e.g. "Chicago, IL" or "Toronto, ON, Canada")
+  const parts = raw.split(',').map(p => p.trim())
+  for (const part of parts) {
+    const abbr = part.toUpperCase().replace(/\.$/, '')
+    if (US_STATES.has(abbr)) return { country: 'US', stateProvince: abbr }
+    if (CA_PROVINCES.has(abbr)) return { country: 'CA', stateProvince: abbr }
+  }
+
+  // Fallback: country only
+  if (isUSA)    return { country: 'US', stateProvince: null }
+  if (isCanada) return { country: 'CA', stateProvince: null }
+
+  return { country: null, stateProvince: null }
+}
+
+function buildSnippet(repo: RepoAccumulator, meta: GHRepoMeta | null, owner: GHOwnerMeta): string {
   const pdiCount = repo.ktrCount + repo.kjbCount
   const parts: string[] = []
   if (pdiCount > 0) parts.push(`${pdiCount} PDI file${pdiCount !== 1 ? 's' : ''} (.ktr/.kjb)`)
-  if (repo.pomCount > 0) parts.push('pentaho-kettle Maven dependency')
+  if (repo.pomCount > 0) parts.push('pentaho-kettle Maven dep')
+
+  const meta_parts: string[] = []
+  if (meta) {
+    meta_parts.push(`last updated ${meta.pushed_at.slice(0, 10)}`)
+    const sizeStr = meta.size >= 1024 ? `${(meta.size / 1024).toFixed(1)} MB` : `${meta.size} KB`
+    meta_parts.push(sizeStr)
+    if (meta.stargazers_count > 0) meta_parts.push(`★${meta.stargazers_count}`)
+  }
+
+  const location = owner.location ? ` | ${owner.location}` : ''
   const desc = repo.description ? ` — ${repo.description}` : ''
-  return `Repository ${repo.fullName} contains ${parts.join(' and ')}${desc}`
+  const metaStr = meta_parts.length > 0 ? ` (${meta_parts.join(', ')})` : ''
+
+  return `Repository ${repo.fullName} contains ${parts.join(' and ')}${metaStr}${location}${desc}`
 }
 
 function sleep(ms: number) {
   return new Promise<void>(r => setTimeout(r, ms))
 }
 
-// ─────────────────────────────────────────
-// Fixtures (used when no GITHUB_TOKEN)
-// ─────────────────────────────────────────
-
-const now = new Date().toISOString()
-
-const GITHUB_FIXTURES: RawSignal[] = [
-  {
-    source: 'github',
-    source_url: 'https://github.com/MaricopaCountyIT/etl-pipelines',
-    snippet: 'Repository MaricopaCountyIT/etl-pipelines contains 47 PDI files (.ktr/.kjb) — ETL pipelines for county data warehouse loads.',
-    org_hint: 'MaricopaCountyIT',
-    org_domain: 'maricopa.gov',
-    country: 'US',
-    state_province: 'AZ',
-    signal_date: '2026-04-01',
-    collected_at: now,
-  },
-  {
-    source: 'github',
-    source_url: 'https://github.com/GeisingerHealth/data-platform',
-    snippet: 'Repository GeisingerHealth/data-platform contains pentaho-kettle Maven dependency — data integration module.',
-    org_hint: 'GeisingerHealth',
-    org_domain: 'geisinger.edu',
-    country: 'US',
-    state_province: 'PA',
-    signal_date: '2026-03-18',
-    collected_at: now,
-  },
-  {
-    source: 'github',
-    source_url: 'https://github.com/pge-data-team/spde-etl',
-    snippet: 'Repository pge-data-team/spde-etl contains 12 PDI files (.ktr/.kjb) — SPDE ETL framework built on Pentaho Data Integration CE 9.1.',
-    org_hint: 'Pacific Gas and Electric',
-    org_domain: 'pge.com',
-    country: 'US',
-    state_province: 'CA',
-    signal_date: '2026-02-10',
-    collected_at: now,
-  },
-  {
-    source: 'github',
-    source_url: 'https://github.com/AmFamInsurance/dw-transforms',
-    snippet: 'Repository AmFamInsurance/dw-transforms contains 8 PDI files (.ktr/.kjb) — claims data warehouse ETL using Pentaho Kettle.',
-    org_hint: 'American Family Insurance',
-    org_domain: 'amfam.com',
-    country: 'US',
-    state_province: 'WI',
-    signal_date: '2026-01-29',
-    collected_at: now,
-  },
-  {
-    source: 'github',
-    source_url: 'https://github.com/CdASD-it/reporting-etl',
-    snippet: 'Repository CdASD-it/reporting-etl contains 3 PDI files (.ktr/.kjb) — student information system reporting, Pentaho 9.x CE.',
-    org_hint: "Coeur d'Alene School District",
-    org_domain: null,
-    country: 'US',
-    state_province: 'ID',
-    signal_date: '2025-11-04',
-    collected_at: now,
-  },
-  {
-    source: 'github',
-    source_url: 'https://github.com/AustinEnergyIT/mdm-pipeline',
-    snippet: 'Repository AustinEnergyIT/mdm-pipeline contains 23 PDI files (.ktr/.kjb) — meter data management transformation pipeline using Pentaho PDI.',
-    org_hint: 'Austin Energy',
-    org_domain: 'austinenergy.com',
-    country: 'US',
-    state_province: 'TX',
-    signal_date: '2025-09-12',
-    collected_at: now,
-  },
-  {
-    source: 'github',
-    source_url: 'https://github.com/MeadJohnsonNutrition/supply-chain-bi',
-    snippet: 'Repository MeadJohnsonNutrition/supply-chain-bi contains 5 PDI files (.ktr/.kjb) and pentaho-kettle Maven dependency — supply chain BI ETL.',
-    org_hint: 'Mead Johnson Nutrition',
-    org_domain: 'meadjohnson.com',
-    country: 'US',
-    state_province: 'IL',
-    signal_date: '2025-07-20',
-    collected_at: now,
-  },
-]

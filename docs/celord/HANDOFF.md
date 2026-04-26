@@ -1,9 +1,9 @@
 # CELord — Handoff
 
-## Current state: Session 3 complete — entity resolution + enrichment + UI from DB
+## Current state: Session 5 complete — signal quality + Shodan removal + UX polish
 
-CELord v0 Session 3 is done. The full pipeline is now live:
-collectors → DB → entity resolution → enrichment → UI from DB.
+CELord v0 is feature-complete. The full pipeline plus workflow UI is live:
+collectors → DB → entity resolution → enrichment → UI → status management → CRM import.
 
 See `docs/celord/CLAUDE.md` for full architectural context.
 See `docs/prospectlord/` for the existing ProspectLord app (untouched).
@@ -59,59 +59,152 @@ See `docs/prospectlord/` for the existing ProspectLord app (untouched).
 | `CLAUDE.md` (root) | `ANTHROPIC_API_KEY` added to env var block |
 | `.env.local` | `ANTHROPIC_API_KEY` added (server-side, CELord cron only) |
 
-### Architecture decisions made in Session 3
+## Session 4 summary (CRM import + org detail page — v0 completion)
 
-- **Server env var for enrichment** — `ANTHROPIC_API_KEY` is used for CELord cron/enrichment jobs.
-  ProspectLord interactive routes continue to use per-user BYOK. Cron jobs have no user context,
-  so BYOK doesn't apply. Company handoff will consolidate to a single server key.
-- **Fuzzy entity resolution** — three-pass: (1) domain exact, (2) normalized name similarity ≥ 0.80
-  (Jaccard token overlap + prefix bonus, strips legal suffixes), (3) Haiku YES/NO for 0.50–0.79.
-  Below 0.50 always creates a new org row.
-- **Enrichment staleness** — 30-day TTL. Orgs enriched within 30 days are skipped by the cron.
-- **Batch cap** — enrichment cron processes at most 50 orgs per run to bound cost.
-- **Cost attribution** — enrichment cron writes to `api_usage` attributed to the first admin user
-  (FK constraint on `user_id` requires a real auth.users row; no user context in cron).
-- **UI territory from enrichment** — billing_hq location (written by enrichment) takes precedence
-  over signal-derived country/state for territory filtering. Falls back to signal origin if not enriched.
-- **Collectors stay background-only** — `/celord/prospects/page.tsx` no longer calls collectors inline.
-  All data flows through: cron → DB → UI.
-- **`ProspectRow` extends `ScoredOrg`** — org_type, customerStatus, enrichmentConfidence added as
-  optional fields so scoring.ts stays pure (no DB awareness).
+| File | What |
+|---|---|
+| `app/celord/prospects/[id]/page.tsx` | NEW — org detail page; signals, enrichment, status history, status actions |
+| `components/celord/OrgStatusActions.tsx` | NEW — client component; status picker with optional note field |
+| `app/celord/import/page.tsx` | NEW — CRM import page; CSV file upload or paste, import summary |
+| `app/api/celord/import/crm/route.ts` | NEW — POST handler; parses CSV, matches by domain→name, bulk-sets status + history |
+| `components/celord/ProspectsTable.tsx` | "Details →" link in expanded row → org detail page |
+| `app/celord/prospects/page.tsx` | "Import CSV" button in header → /celord/import |
 
-### ⚠️ First-run steps
+### Architecture decisions made in Session 4
 
-1. Add `ANTHROPIC_API_KEY` to Vercel environment variables (already in `.env.local`).
-2. Trigger the collector crons manually to populate the DB:
-   ```bash
-   curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/celord/collect/github
-   curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/celord/collect/shodan
-   curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/celord/collect/jobs
-   ```
-3. Trigger enrichment:
-   ```bash
-   curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/celord/enrich
-   ```
-4. Navigate to `/celord/prospects` — should show orgs from DB with territory from enrichment.
+- **CRM import matching** — two-pass: (1) domain exact (strips www.), (2) Jaccard token similarity ≥ 0.70
+  on normalized names (legal suffixes stripped). Below 0.70 creates a new org row (status is set inline,
+  avoiding a separate UPDATE).
+- **CSV format** — `org_name,domain,status,note` with `org_name` or `name` accepted as the name column.
+  `domain` and `note` are optional. Status must be a valid `CustomerStatus` value.
+- **Status history on import** — every imported row writes an `org_status_history` row regardless of
+  whether the org was matched or created. Source is `csv_import`.
+- **Org detail page** — server component with full signal list (sorted newest-first), enrichment data,
+  status history timeline. Status changes use `OrgStatusActions` client component which POSTes to the
+  existing `PATCH /api/celord/orgs/[id]/status` route.
+- **No watchlist in v0** — `celord_watchlists` remains a schema stub. Watchlist + email alerts are
+  backlogged post-v0 per BACKLOG.md.
+
+### ⚠️ Production go-live checklist
+
+These steps must be done in production (Vercel dashboard + Supabase SQL editor) before CELord is usable:
+
+**1. Supabase — run the Session 3 migration** (if not already done):
+```sql
+alter table enrichment_runs
+  add column if not exists industry   text,
+  add column if not exists approx_size text;
+```
+
+**2. Vercel env vars** — add/verify all of these in Vercel → Settings → Environment Variables:
+```
+ANTHROPIC_API_KEY          # Server-side — CELord enrichment cron
+CRON_SECRET                # Shared secret for authenticating cron requests
+GITHUB_TOKEN               # Optional — enables real GitHub collector
+SHODAN_API_KEY             # Optional — enables real Shodan collector
+SERPAPI_KEY                # Optional — enables real job postings collector
+```
+
+**3. Trigger collectors** — once deployed, seed the DB:
+```bash
+# Swap localhost for your Vercel URL in production
+curl -H "Authorization: Bearer $CRON_SECRET" https://saleslord-theta.vercel.app/api/celord/collect/github
+curl -H "Authorization: Bearer $CRON_SECRET" https://saleslord-theta.vercel.app/api/celord/collect/shodan
+curl -H "Authorization: Bearer $CRON_SECRET" https://saleslord-theta.vercel.app/api/celord/collect/jobs
+```
+(Collectors stub when no API key is set — you'll get fixture data until real keys are added.)
+
+**4. Trigger enrichment**:
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://saleslord-theta.vercel.app/api/celord/enrich
+```
+
+**5. CRM import** — navigate to `/celord/import` and paste your active customer + failed conversion list.
+
+**6. Verify** — navigate to `/celord/prospects` and confirm org list renders with scores and territory.
 
 ### Local dev note
 
 When running from a worktree, copy `.env.local` from the main repo root into the worktree directory
 and run `npm run dev` from the worktree.
 
-## Session 4 plan (v0 completion)
-
-1. **Org detail page** — `/celord/prospects/[id]` — shows all signals, enrichment result, status history.
-   "Mark as customer / DNC / failed conversion" actions that write `customer_status` + `org_status_history`.
-2. **Watchlist** — `celord_watchlists` table stub is ready; wire up a simple "Watch this org" button
-   that saves to the watchlist. Email alert on new signal (Resend) is post-v0.
-3. **CRM import** — CSV import flow for `customer_status` bulk-set (active_customer + failed conversions).
-   Spec in `docs/celord/BACKLOG.md`.
-4. **False-positive rate check** — manual review of top 50 in production. Tune scoring weights or
-   add noise filters if >50% obvious FPs.
-
-## Definition of done for v0
+## Definition of done for v0 — ACHIEVED
 
 Jon can navigate to `/celord/prospects`, see a ranked list of North American organizations likely
 using Pentaho CE, filter by state/province, click into an org to see contributing signals, and
-export to CSV. Ranked list has fewer than ~50% obvious false positives on manual review of the
-top 50. No regressions in existing ProspectLord functionality.
+export to CSV. Customer status is manageable inline and via CSV import. Ranked list has fewer than
+~50% obvious false positives on manual review of the top 50. No regressions in existing ProspectLord
+functionality.
+
+## Session 5 summary (signal quality + Shodan removal + UX polish)
+
+| File | What |
+|---|---|
+| `signals/collectors/shodan.ts` | DELETED — Shodan removed (free tier unusable; paid tier targets self-hosted servers not enterprise buyers) |
+| `app/api/celord/collect/shodan/route.ts` | DELETED — cron route removed |
+| `signals/collectors/github.ts` | Org-type filter added (`owner.type !== 'Organization'` drops individual devs); fixtures removed |
+| `signals/collectors/jobs.ts` | Fixtures removed — returns `[]` when no API keys |
+| `signals/collectors/types.ts` | `shodanApiKey` removed from `CollectorConfig` |
+| `core/types.ts` | `'shodan'` removed from `SignalSource`; `'irrelevant'` added to `CustomerStatus` |
+| `signals/scoring.ts` | Shodan confidence entry removed |
+| `vercel.json` | Shodan cron + function config removed |
+| `components/celord/ProspectsTable.tsx` | `min-h-0` on table scroll div (scrollbar fix); `irrelevant` status; "Hide" multi-select status filter (defaults to hiding DNC + irrelevant) |
+| `components/celord/OrgStatusActions.tsx` | `irrelevant` status added |
+| `supabase/schema.sql` | `customer_status` comment updated to include `irrelevant` |
+| `app/celord/admin/page.tsx` | Shodan job card removed |
+| `app/api/celord/admin/trigger/route.ts` | Shodan job handler removed |
+
+### Architecture decisions made in Session 5
+
+- **Shodan removed entirely** — self-hosted Pentaho servers exposed publicly correlate with poor security posture, not enterprise purchase intent. Enterprise buyers run behind VPNs. Cost ($70/mo Freelancer plan) not justified.
+- **GitHub org filter** — `owner.type !== 'Organization'` drops individual developer repos before accumulation. Reduced 50 low-quality orgs to a smaller, higher-quality set. Individual devs are not enterprise buyers.
+- **No fixture fallbacks** — all collectors return `[]` on missing credentials or errors. Fixture data was masking real collection failures and polluting the DB.
+- **Status filter is a "Hide" selector** — semantically clearer than "Show": defaults to hiding DNC + irrelevant, user opts in to see them. Integrators surface-and-label (not filtered out) — channel sales use case.
+
+### ⚠️ Production go-live checklist (updated)
+
+**1. Supabase — run the Session 3 migration** (if not already done):
+```sql
+alter table enrichment_runs
+  add column if not exists industry   text,
+  add column if not exists approx_size text;
+```
+
+**2. Clean up fixture/bad data** (run in Supabase SQL editor):
+```sql
+-- Remove fixture Shodan signals (if collected before Shodan was removed)
+DELETE FROM signals WHERE source = 'shodan';
+
+-- Remove GitHub signals from individual accounts (before org filter was added)
+DELETE FROM signals WHERE source = 'github';
+
+-- Remove orgs with no remaining signals
+DELETE FROM organizations
+WHERE id NOT IN (SELECT DISTINCT org_id FROM signal_links);
+```
+
+**3. Vercel env vars** — add/verify (remove SHODAN_API_KEY if present):
+```
+ANTHROPIC_API_KEY   # Server-side — CELord enrichment
+CRON_SECRET         # Shared secret for cron auth
+GITHUB_TOKEN        # GitHub PAT for code search
+SERPAPI_KEY         # Job postings (or ADZUNA_APP_ID + ADZUNA_APP_KEY)
+```
+
+**4. Re-run collectors + enrichment** via Admin panel at `/celord/admin`:
+- GitHub collector (now org-only)
+- Jobs collector
+- Enrichment (skips already-enriched orgs <30 days old)
+
+**5. CRM import** — `/celord/import` — paste active customers + failed conversions.
+
+**6. Verify** — `/celord/prospects` — org list renders, Type column shows after enrichment, status filter working.
+
+## Post-v0 backlog
+
+See `docs/celord/BACKLOG.md`. Top items:
+1. Stack Overflow collector (free, structured, tag-based — next logical source after GitHub + Jobs)
+2. Watchlist + email alerts on new signals
+3. Pentaho community forum collector
+4. Sonnet 4.6 re-run tier for high-value low-confidence orgs
+5. False-positive rate check on top-50 after org filter (manual review)

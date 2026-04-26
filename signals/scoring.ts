@@ -22,7 +22,6 @@ export type ScoredOrg = {
 
 // Base confidence by signal source.
 const SOURCE_CONFIDENCE: Record<SignalSource, number> = {
-  shodan:       0.95,  // exposed server = definitive
   github:       0.85,  // committed .ktr/.kjb = strong
   forum:        0.80,  // community post = strong
   jobs:         0.70,  // job posting = probable
@@ -75,7 +74,6 @@ function reachabilityScore(signals: RawSignal[]): number {
   if (sources.has('forum') || sources.has('conference')) return 0.70
   // GitHub: repo owner(s) are identifiable.
   if (sources.has('github')) return 0.60
-  // Shodan only: no person signal, cold outreach only.
   return 0.35
 }
 
