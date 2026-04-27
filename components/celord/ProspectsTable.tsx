@@ -17,6 +17,7 @@ export type ProspectRow = ScoredOrg & {
 
 const SOURCE_LABEL: Record<SignalSource, string> = {
   github:        'GitHub',
+  docker:        'Docker Hub',
   jobs:          'Job posting',
   forum:         'Forum',
   stackoverflow: 'Stack Overflow',
@@ -25,6 +26,7 @@ const SOURCE_LABEL: Record<SignalSource, string> = {
 
 const SOURCE_COLOR: Record<SignalSource, string> = {
   github:        'bg-purple-100 text-purple-700',
+  docker:        'bg-sky-100 text-sky-700',
   jobs:          'bg-blue-100 text-blue-700',
   forum:         'bg-amber-100 text-amber-700',
   stackoverflow: 'bg-orange-100 text-orange-700',
@@ -228,11 +230,16 @@ function scoreBadge(score: number) {
   return 'bg-gray-100 text-gray-500'
 }
 
-type SortKey = 'score' | 'signals' | 'org'
+type SortKey = 'score' | 'signals' | 'date' | 'org'
+
+function latestSignalDate(signals: { signal_date: string | null }[]): string | null {
+  const dates = signals.map(s => s.signal_date).filter(Boolean) as string[]
+  return dates.length > 0 ? dates.sort().at(-1)! : null
+}
 type SortDir = 'asc' | 'desc'
 
 export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>('score')
+  const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [countryFilter, setCountryFilter] = useState<Set<string>>(new Set())
@@ -241,6 +248,8 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
   const [industryFilter, setIndustryFilter] = useState<Set<string>>(new Set())
   const [sizeFilter, setSizeFilter] = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set(['do_not_contact', 'irrelevant', 'lead_created_in_crm']))
+  const [sourceFilter, setSourceFilter] = useState<Set<string>>(new Set())
+  const [sinceYear, setSinceYear] = useState<number | null>(null)
   // Local status overrides — populated after inline status changes
   const [statusOverrides, setStatusOverrides] = useState<Map<string, string>>(new Map())
 
@@ -271,6 +280,25 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
     return order.filter(s => set.has(s))
   }, [orgs])
 
+  const sourceLabels = useMemo(() => {
+    const set = new Set(orgs.flatMap(o => o.signals.map(s => s.source)))
+    // Preserve display order defined in SOURCE_LABEL
+    return (Object.keys(SOURCE_LABEL) as SignalSource[])
+      .filter(s => set.has(s))
+      .map(s => SOURCE_LABEL[s])
+  }, [orgs])
+
+  // Years that actually appear in signal_date values, descending
+  const signalYears = useMemo(() => {
+    const set = new Set<number>()
+    for (const org of orgs) {
+      for (const sig of org.signals) {
+        if (sig.signal_date) set.add(Number(sig.signal_date.slice(0, 4)))
+      }
+    }
+    return Array.from(set).sort((a, b) => b - a)
+  }, [orgs])
+
   const rowKey = (org: ProspectRow) => org.orgId ?? org.orgHint
 
   const visible = useMemo(() => {
@@ -285,15 +313,28 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
     if (typeFilter !== 'all') rows = rows.filter(o => o.orgType === typeFilter)
     if (industryFilter.size > 0) rows = rows.filter(o => o.industry && industryFilter.has(o.industry))
     if (sizeFilter.size > 0) rows = rows.filter(o => o.approxSize && sizeFilter.has(o.approxSize))
+    if (sourceFilter.size > 0) rows = rows.filter(o => o.signals.some(s => sourceFilter.has(SOURCE_LABEL[s.source])))
+    if (sinceYear !== null) {
+      const cutoff = `${sinceYear}-01-01`
+      rows = rows.filter(o => o.signals.some(s => s.signal_date && s.signal_date >= cutoff))
+    }
     rows.sort((a, b) => {
       let cmp = 0
       if (sortKey === 'score') cmp = a.score - b.score
       else if (sortKey === 'signals') cmp = a.signals.length - b.signals.length
+      else if (sortKey === 'date') {
+        const aDate = latestSignalDate(a.signals)
+        const bDate = latestSignalDate(b.signals)
+        if (!aDate && !bDate) cmp = 0
+        else if (!aDate) cmp = -1   // nulls sort last
+        else if (!bDate) cmp = 1
+        else cmp = aDate < bDate ? -1 : aDate > bDate ? 1 : 0
+      }
       else cmp = a.orgHint.localeCompare(b.orgHint)
       return sortDir === 'desc' ? -cmp : cmp
     })
     return rows
-  }, [orgs, countryFilter, stateFilter, typeFilter, industryFilter, sizeFilter, statusFilter, sortKey, sortDir, statusOverrides])
+  }, [orgs, countryFilter, stateFilter, typeFilter, industryFilter, sizeFilter, statusFilter, sourceFilter, sinceYear, sortKey, sortDir, statusOverrides])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -306,11 +347,12 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
 
   function exportCsv() {
     const rows = [
-      ['Organization', 'Score', 'Signals', 'Top Source', 'Country', 'State/Province', 'Industry', 'Revenue Band', 'Type', 'Domain', 'Status'],
+      ['Organization', 'Score', 'Signals', 'Latest Signal', 'Top Source', 'Country', 'State/Province', 'Industry', 'Revenue Band', 'Type', 'Domain', 'Status'],
       ...visible.map(o => [
         o.orgHint,
         o.score,
         o.signals.length,
+        latestSignalDate(o.signals)?.slice(0, 10) ?? '',
         SOURCE_LABEL[o.topSource],
         o.country ?? '',
         o.stateProvince ?? '',
@@ -386,6 +428,32 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
             <MultiSelect label="Sizes" options={sizes} selected={sizeFilter} onChange={setSizeFilter} />
           </>
         )}
+        {sourceLabels.length > 1 && (
+          <>
+            <span className="text-sm font-medium text-gray-600 ml-2">Source</span>
+            <MultiSelect
+              label="Sources"
+              options={sourceLabels}
+              selected={sourceFilter}
+              onChange={setSourceFilter}
+            />
+          </>
+        )}
+        {signalYears.length > 1 && (
+          <>
+            <span className="text-sm font-medium text-gray-600 ml-2">Since</span>
+            <select
+              className="text-sm bg-white border border-gray-300 rounded px-2 py-1 text-gray-800"
+              value={sinceYear ?? ''}
+              onChange={e => setSinceYear(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">All time</option>
+              {signalYears.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </>
+        )}
         <>
           <span className="text-sm font-medium text-gray-600 ml-2">Hide</span>
           <StatusMultiSelect selected={statusFilter} onChange={setStatusFilter} />
@@ -407,6 +475,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
               {col('org', 'Organization')}
               {col('score', 'Score')}
               {col('signals', 'Signals')}
+              {col('date', 'Latest signal')}
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-500">Top source</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-500">Country</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-500">State/Province</th>
@@ -442,6 +511,9 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{org.signals.length}</td>
+                    <td className="px-4 py-3 text-gray-500 text-sm tabular-nums">
+                      {latestSignalDate(org.signals)?.slice(0, 10) ?? '—'}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded text-sm ${SOURCE_COLOR[org.topSource]}`}>
                         {SOURCE_LABEL[org.topSource]}
@@ -458,7 +530,7 @@ export function ProspectsTable({ orgs }: { orgs: ProspectRow[] }) {
                   </tr>
                   {expanded === key && (
                     <tr className="bg-gray-50">
-                      <td colSpan={9} className="px-6 py-4">
+                      <td colSpan={10} className="px-6 py-4">
                         <div className="flex gap-6 mb-3 text-sm text-gray-500 flex-wrap">
                           <span>Usage confidence <strong className="text-gray-800">{Math.round(org.dimensions.usageConfidence * 100)}</strong></span>
                           <span>Scale <strong className="text-gray-800">{Math.round(org.dimensions.scale * 100)}</strong></span>

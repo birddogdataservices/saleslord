@@ -17,6 +17,10 @@
       "schedule": "15 2 1 * *"
     },
     {
+      "path": "/api/celord/collect/dockerhub",
+      "schedule": "30 2 1 * *"
+    },
+    {
       "path": "/api/celord/enrich",
       "schedule": "0 4 1 * *"
     }
@@ -31,6 +35,7 @@
     "app/api/celord/collect/github/route.ts": { "maxDuration": 60 },
     "app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 },
     "app/api/celord/collect/stackoverflow/route.ts": { "maxDuration": 30 },
+    "app/api/celord/collect/dockerhub/route.ts": { "maxDuration": 60 },
     "app/api/celord/enrich/route.ts": { "maxDuration": 300 }
   }
 }

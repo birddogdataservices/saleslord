@@ -22,11 +22,12 @@ export type ScoredOrg = {
 
 // Base confidence by signal source.
 const SOURCE_CONFIDENCE: Record<SignalSource, number> = {
-  github:       0.85,  // committed .ktr/.kjb = strong
-  forum:        0.80,  // community post = strong
-  jobs:         0.70,  // job posting = probable
-  stackoverflow: 0.60, // question = possible
-  conference:   0.50,  // talk mention = possible
+  github:        0.85,  // committed .ktr/.kjb = strong
+  docker:        0.85,  // published Pentaho image with real pulls = strong
+  forum:         0.80,  // community post = strong
+  jobs:          0.70,  // job posting = probable
+  stackoverflow: 0.60,  // question = possible
+  conference:    0.50,  // talk mention = possible
 }
 
 // Keywords that raise the risk posture score.

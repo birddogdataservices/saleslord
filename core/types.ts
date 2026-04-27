@@ -21,6 +21,7 @@ export type CustomerStatus =
 
 export type SignalSource =
   | 'github'
+  | 'docker'
   | 'jobs'
   | 'forum'
   | 'stackoverflow'
