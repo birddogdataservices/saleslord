@@ -23,6 +23,21 @@ BACKLOG as v0 ships.
   and retry the same query via Adzuna if both keys are configured. Build only
   if SerpApi quota becomes a recurring problem — Vercel logs will surface it
   clearly with the current error logging.
+- **EMEA job posting collectors.** Current jobs collector (SerpApi/Adzuna) has
+  good US/CA coverage but thin EMEA coverage. If CELord is extended to support
+  EMEA teams, add:
+  - **Jooble** (`jooble.org/api`) — strongest EU coverage (DE, FR, NL, Benelux,
+    PL, etc.); free API key; simple POST body with `keywords` + `location`.
+    Best first choice for EMEA.
+  - **Arbeitnow** (`arbeitnow.com/api`) — EU-focused, completely free, no key
+    required. Smaller index than Jooble but zero marginal cost; good as a
+    supplemental pass.
+  - **Reed** (`reed.co.uk/api`) — UK only; dominates UK job postings; free API
+    key. Add if UK territory is a priority.
+  - **JSearch (RapidAPI)** — aggregates Indeed, LinkedIn, Glassdoor, ZipRecruiter
+    globally. Free tier is 200 req/month (tight but workable for monthly cron).
+    Best single-API breadth for any territory; consider as a US/CA upgrade too
+    if SerpApi becomes expensive.
 
 ## Platform evolution (the SalesLord platform)
 

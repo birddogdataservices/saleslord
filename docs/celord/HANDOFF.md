@@ -1,6 +1,6 @@
 # CELord — Handoff
 
-## Current state: Session 6 complete — Stack Overflow collector
+## Current state: Session 7 complete — Docker Hub collector
 
 CELord v0 is feature-complete. The full pipeline plus workflow UI is live:
 collectors → DB → entity resolution → enrichment → UI → status management → CRM import.
@@ -231,6 +231,37 @@ SERPAPI_KEY         # Job postings (or ADZUNA_APP_ID + ADZUNA_APP_KEY)
 Without the key the collector still works — just capped at 300 req/day across Vercel's shared IPs.
 
 All prior production steps from Sessions 3–5 still apply (see above).
+
+## Session 7 summary (Docker Hub collector)
+
+| File | What |
+|---|---|
+| `core/types.ts` | `'docker'` added to `SignalSource` |
+| `signals/scoring.ts` | `docker: 0.85` added to `SOURCE_CONFIDENCE` |
+| `signals/collectors/dockerhub.ts` | NEW — Docker Hub search (`/v2/search/repositories/?query=pentaho`); filters vendor namespaces + noise descriptions + <100 pulls; lookups org/user profile for `company`, `profile_url`, `location` |
+| `app/api/celord/collect/dockerhub/route.ts` | NEW — cron route, monthly on the 1st at 02:30 UTC |
+| `vercel.json` | Docker Hub cron + 60s function timeout added |
+| `app/celord/admin/page.tsx` | Docker Hub job card added between Stack Overflow and Enrichment |
+| `app/api/celord/admin/trigger/route.ts` | `dockerhub` case added to POST handler |
+
+### Architecture decisions made in Session 7
+
+- **Search-based discovery** — `GET /v2/search/repositories/?query=pentaho&page_size=100` paginates up to 1000 results. No API key required; Docker Hub's public search is unauthenticated.
+- **Pull count threshold >100** — eliminates personal experiments that were never run in production. The 82k-pull Telefonica image and 1.58M-pull ap1.com.br image both clear this easily.
+- **Vendor namespace filter** — `pentaho`, `hitachivantara`, `bitnami`, etc. publish Pentaho rather than use it. Filtered at collector level.
+- **Noise description filter** — regex for tutorial/demo/poc/example/sample/test drops repos that clearly aren't production deployments.
+- **Org extraction via namespace profile** — `GET /v2/orgs/{namespace}` (fallback: `/v2/users/{namespace}`) provides `company`, `full_name`, `profile_url`, `location`. `company` is used as `org_hint`; `profile_url` is parsed for `org_domain` (personal/social domains filtered). Namespace itself is the fallback `org_hint`.
+- **One signal per qualifying repo** — rather than one signal per namespace, each repo becomes its own signal. Entity resolution's domain/name deduplication collapses multiple repos from the same org into one org row. Snippet includes repo name + pull count + description for provenance.
+- **No API key needed** — Docker Hub public API is freely accessible. No env var added.
+- **`signal_date: null`** — Docker Hub search results don't include a last-push date. Enrichment timestamp via `collected_at` is the date anchor.
+
+### ⚠️ Production go-live checklist (updated for Session 7)
+
+No new env vars needed. Docker Hub collector works out of the box.
+
+Trigger Docker Hub collection via Admin panel at `/celord/admin` → "Docker Hub collector".
+
+All prior production steps from Sessions 3–6 still apply (see above).
 
 ## Post-v0 backlog
 
