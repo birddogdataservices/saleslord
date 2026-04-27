@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 
-type Job = 'github' | 'jobs' | 'enrich'
+type Job = 'github' | 'jobs' | 'stackoverflow' | 'enrich'
 
 type JobState =
   | { status: 'idle' }
@@ -15,8 +15,9 @@ type JobResult = { ok: boolean; [key: string]: unknown }
 
 const JOBS: { id: Job; label: string; description: string }[] = [
   { id: 'github', label: 'GitHub collector', description: 'Search GitHub for .ktr / .kjb / pom.xml Pentaho references' },
-  { id: 'jobs',   label: 'Jobs collector',   description: 'Search job postings for Pentaho CE mentions (SerpApi / Adzuna)' },
-  { id: 'enrich', label: 'Enrichment',       description: 'Run Haiku HQ + org type enrichment on unenriched / stale orgs (up to 50)' },
+  { id: 'jobs',          label: 'Jobs collector',          description: 'Search job postings for Pentaho CE mentions (SerpApi / Adzuna)' },
+  { id: 'stackoverflow', label: 'Stack Overflow collector', description: 'Search SO questions tagged pentaho / pentaho-kettle / pentaho-pdi (last 12 months)' },
+  { id: 'enrich',        label: 'Enrichment',              description: 'Run Haiku HQ + org type enrichment on unenriched / stale orgs (up to 50)' },
 ]
 
 function summarize(data: JobResult): { text: string; warn?: string } {

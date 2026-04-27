@@ -2,16 +2,7 @@
 
 import { useState } from 'react'
 import type { CustomerStatus } from '@/core/types'
-
-const STATUS_OPTIONS: { value: CustomerStatus; label: string; cls: string }[] = [
-  { value: 'prospect',                     label: 'Prospect',         cls: 'bg-blue-100 text-blue-700 hover:bg-blue-200' },
-  { value: 'active_customer',              label: 'Customer',         cls: 'bg-green-100 text-green-700 hover:bg-green-200' },
-  { value: 'former_customer',              label: 'Former customer',  cls: 'bg-gray-100 text-gray-600 hover:bg-gray-200' },
-  { value: 'failed_enterprise_conversion', label: 'Failed conv.',     cls: 'bg-orange-100 text-orange-700 hover:bg-orange-200' },
-  { value: 'irrelevant',                   label: 'Irrelevant',       cls: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' },
-  { value: 'do_not_contact',               label: 'Do not contact',   cls: 'bg-red-100 text-red-700 hover:bg-red-200' },
-  { value: 'unknown',                      label: 'Clear status',     cls: 'bg-white text-gray-400 hover:bg-gray-50 border border-gray-200' },
-]
+import { STATUS_OPTIONS } from './statusConfig'
 
 export function OrgStatusActions({
   orgId,

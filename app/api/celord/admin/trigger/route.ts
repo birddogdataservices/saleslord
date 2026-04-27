@@ -8,13 +8,14 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { githubCollector } from '@/signals/collectors/github'
 import { jobsCollector } from '@/signals/collectors/jobs'
+import { stackoverflowCollector } from '@/signals/collectors/stackoverflow'
 import { persistSignals } from '@/signals/persist'
 import { enrichOrg, persistEnrichment } from '@/signals/enrichment'
 import { calculateCost } from '@/lib/utils'
 
 export const maxDuration = 300
 
-const VALID_JOBS = ['github', 'jobs', 'enrich'] as const
+const VALID_JOBS = ['github', 'jobs', 'stackoverflow', 'enrich'] as const
 type Job = typeof VALID_JOBS[number]
 
 const STALE_DAYS = 30
@@ -59,6 +60,12 @@ export async function POST(request: Request) {
     const result = await persistSignals(signals, adminClient)
     const provider = config.serpApiKey ? 'serpapi' : config.adzunaAppId ? 'adzuna' : 'fixture'
     return Response.json({ ok: true, job, provider, signals: signals.length, ...result })
+  }
+
+  if (job === 'stackoverflow') {
+    const signals = await stackoverflowCollector({ stackoverflowApiKey: process.env.STACKOVERFLOW_API_KEY })
+    const result = await persistSignals(signals, adminClient)
+    return Response.json({ ok: true, job, signals: signals.length, ...result })
   }
 
   // ── Enrichment ────────────────────────────────────────────────────────────────

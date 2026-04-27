@@ -62,6 +62,7 @@ Given an organization name, optional domain, and signals, determine:
 8. confidence — float 0.00–1.00 for billing_hq confidence.
 
 Rules:
+- If a web_search tool is available, use it to look up the organization's headquarters before answering. Search for "{org name} headquarters" or "{domain} company" to confirm the HQ location. Set confidence higher when web search confirms the location.
 - Prefer legal/registered HQ over signal origin locations.
 - Government/public sector orgs are almost always "end_user".
 - Consulting firms that implement Pentaho for clients are "integrator".
@@ -140,32 +141,77 @@ export type EnrichOneResult = {
   outputTokens: number
 }
 
+const WEB_SEARCH_SOURCES = new Set(['github', 'jobs'])
+const MAX_SEARCH_ITERATIONS = 2  // 1–2 searches is enough to confirm an HQ
+
 export async function enrichOrg(input: EnrichmentInput): Promise<EnrichOneResult> {
-  const anthropic = getClient()
+  const anthropic  = getClient()
+  const useSearch  = input.signals.some(s => WEB_SEARCH_SOURCES.has(s.source))
+  const tools      = useSearch
+    ? [{ type: 'web_search_20250305', name: 'web_search' }] as any  // eslint-disable-line @typescript-eslint/no-explicit-any
+    : undefined
   const MAX_ATTEMPTS = 3
 
   let lastErr: unknown
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
-      const msg = await anthropic.messages.create({
+      const messages: Anthropic.MessageParam[] = [
+        { role: 'user', content: buildUserPrompt(input) },
+      ]
+
+      let response = await anthropic.messages.create({
         model: MODEL,
-        max_tokens: 300,
+        max_tokens: 512,
         system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: buildUserPrompt(input) }],
+        messages,
+        ...(tools ? { tools } : {}),
       })
 
-      const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+      let totalInput  = response.usage.input_tokens
+      let totalOutput = response.usage.output_tokens
+
+      // Agentic loop for web search tool calls
+      let iterations = 0
+      while (response.stop_reason === 'tool_use' && iterations < MAX_SEARCH_ITERATIONS) {
+        iterations++
+        messages.push({ role: 'assistant', content: response.content })
+
+        const toolResults = response.content
+          .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+          .map(b => ({
+            type:        'tool_result' as const,
+            tool_use_id: b.id,
+            content:     (b as any).output ?? '',  // eslint-disable-line @typescript-eslint/no-explicit-any
+          }))
+
+        messages.push({ role: 'user', content: toolResults })
+
+        response = await anthropic.messages.create({
+          model:    MODEL,
+          max_tokens: 512,
+          system:   SYSTEM_PROMPT,
+          messages,
+          ...(tools ? { tools } : {}),
+        })
+
+        totalInput  += response.usage.input_tokens
+        totalOutput += response.usage.output_tokens
+      }
+
+      const textBlock = response.content.find(b => b.type === 'text')
+      const text = textBlock?.type === 'text' ? textBlock.text : ''
+
       return {
-        output: parseResponse(text),
-        inputTokens: msg.usage.input_tokens,
-        outputTokens: msg.usage.output_tokens,
+        output:       parseResponse(text),
+        inputTokens:  totalInput,
+        outputTokens: totalOutput,
       }
     } catch (err: unknown) {
       lastErr = err
       const status = (err as { status?: number })?.status
       const retryable = status === 429 || status === 529 || status === 402
       if (!retryable || attempt === MAX_ATTEMPTS - 1) throw err
-      await new Promise(r => setTimeout(r, 2000 * (attempt + 1))) // 2s, 4s
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)))
     }
   }
 

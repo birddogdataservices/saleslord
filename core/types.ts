@@ -17,6 +17,7 @@ export type CustomerStatus =
   | 'failed_enterprise_conversion'
   | 'do_not_contact'
   | 'irrelevant'
+  | 'lead_created_in_crm'
 
 export type SignalSource =
   | 'github'

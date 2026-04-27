@@ -14,6 +14,8 @@ const VALID_STATUSES: CustomerStatus[] = [
   'former_customer',
   'failed_enterprise_conversion',
   'do_not_contact',
+  'irrelevant',
+  'lead_created_in_crm',
 ]
 
 export async function PATCH(
