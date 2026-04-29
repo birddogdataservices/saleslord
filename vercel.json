@@ -1,0 +1,44 @@
+{
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter @saleslord/web build",
+  "outputDirectory": "apps/web/.next",
+  "crons": [
+    {
+      "path": "/api/cron/refresh-all",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/celord/collect/github",
+      "schedule": "0 2 1 * *"
+    },
+    {
+      "path": "/api/celord/collect/jobs",
+      "schedule": "0 3 1 * *"
+    },
+    {
+      "path": "/api/celord/collect/stackoverflow",
+      "schedule": "15 2 1 * *"
+    },
+    {
+      "path": "/api/celord/collect/dockerhub",
+      "schedule": "30 2 1 * *"
+    },
+    {
+      "path": "/api/celord/enrich",
+      "schedule": "0 4 1 * *"
+    }
+  ],
+  "functions": {
+    "apps/web/app/api/research/route.ts": { "maxDuration": 300 },
+    "apps/web/app/api/check-updates/route.ts": { "maxDuration": 300 },
+    "apps/web/app/api/refresh-email/route.ts": { "maxDuration": 30 },
+    "apps/web/app/api/admin/case-studies/import-deck/route.ts": { "maxDuration": 120 },
+    "apps/web/app/api/case-studies/match/route.ts": { "maxDuration": 30 },
+    "apps/web/app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 },
+    "apps/web/app/api/celord/collect/github/route.ts": { "maxDuration": 60 },
+    "apps/web/app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 },
+    "apps/web/app/api/celord/collect/stackoverflow/route.ts": { "maxDuration": 30 },
+    "apps/web/app/api/celord/collect/dockerhub/route.ts": { "maxDuration": 60 },
+    "apps/web/app/api/celord/enrich/route.ts": { "maxDuration": 300 }
+  }
+}
