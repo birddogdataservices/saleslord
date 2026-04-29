@@ -1,0 +1,21 @@
+{
+  "name": "@saleslord/signals",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./scoring": "./src/scoring.ts",
+    "./persist": "./src/persist.ts",
+    "./enrichment": "./src/enrichment.ts",
+    "./collectors/types": "./src/collectors/types.ts",
+    "./collectors/github": "./src/collectors/github.ts",
+    "./collectors/jobs": "./src/collectors/jobs.ts",
+    "./collectors/stackoverflow": "./src/collectors/stackoverflow.ts",
+    "./collectors/dockerhub": "./src/collectors/dockerhub.ts"
+  },
+  "dependencies": {
+    "@saleslord/core": "workspace:*",
+    "@anthropic-ai/sdk": "^0.81.0",
+    "@supabase/supabase-js": "^2.101.1"
+  }
+}

@@ -7,7 +7,26 @@
       "Bash(npx create-next-app@latest saleslord-scaffold --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --use-npm --yes)",
       "Bash(npm install:*)",
       "Bash(npx shadcn@latest init --defaults)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(mkdir -p /tmp/saleslord_refactor)",
+      "Bash(cp \"C:/Users/jonat/Downloads/files.zip\" /tmp/saleslord_refactor/)",
+      "Read(//tmp/**)",
+      "Bash(unzip -o files.zip)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(cp \"C:\\\\Users\\\\jonat\\\\Downloads\\\\files\\\\CLAUDE.md\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\docs\\\\territorylord\\\\CLAUDE.md\")",
+      "Bash(cp \"C:\\\\Users\\\\jonat\\\\Downloads\\\\files\\\\HANDOFF.md\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\docs\\\\territorylord\\\\HANDOFF.md\")",
+      "Bash(cp \"C:\\\\Users\\\\jonat\\\\Downloads\\\\files\\\\BACKLOG.md\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\docs\\\\territorylord\\\\BACKLOG.md\")",
+      "Bash(where pnpm *)",
+      "Bash(pnpm --version)",
+      "PowerShell(npm install -g pnpm)",
+      "PowerShell(pnpm --version)",
+      "Bash(npm config *)",
+      "Bash(ls \"$\\(npm config get prefix\\)/pnpm\")",
+      "Bash(COREPACK_ENABLE_STRICT=0 pnpm install)",
+      "Bash(cp \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\apps\\\\web\\\\.env.local\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\apps\\\\web\\\\.env.local\")",
+      "Bash(cp \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.env.local\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\apps\\\\web\\\\.env.local\")",
+      "Bash(COREPACK_ENABLE_STRICT=0 pnpm build)"
     ]
   }
 }

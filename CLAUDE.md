@@ -3,7 +3,7 @@
 ## What this repo is
 
 The **SalesLord platform** — a suite of B2B sales tools for enterprise AEs.
-The repo hosts two apps in Stage 1 (single Next.js deployment):
+A pnpm monorepo with one deployed Next.js app hosting all products:
 
 - **ProspectLord** (currently branded SalesLord in code) — prospecting and
   outreach assistant. Briefs, email drafts, decision maker targeting, case
@@ -11,43 +11,51 @@ The repo hosts two apps in Stage 1 (single Next.js deployment):
 - **CELord** — Pentaho CE signal detection and prospect discovery. Finds
   organizations running end-of-life Pentaho Community Edition via GitHub,
   Shodan, job postings, and other public signals. See [`docs/celord/CLAUDE.md`](docs/celord/CLAUDE.md).
+- **TerritoryLord** — territory whitespace tool. Enumerates organizations in a
+  rep's territory that plausibly fit their ICP. Not yet built.
+  See [`docs/territorylord/CLAUDE.md`](docs/territorylord/CLAUDE.md).
 
 ## Naming and the rename path
 
-- **SalesLord** — (a) the existing repo name (stays forever — it's the platform
-  monorepo name), and (b) the current branding of the prospecting app that will
-  be renamed ProspectLord at Stage 2.
-- **ProspectLord** — rename target for the current prospecting app. Rename
-  happens at Stage 2 bundled with the monorepo restructure. Until then,
-  "SalesLord" in code and user-facing strings means ProspectLord.
-- **CELord** — CE signal detection app. Built as a feature inside this repo
-  in Stage 1; promoted to its own workspace at Stage 2.
+- **SalesLord** — the repo name (stays forever — it's the platform monorepo name).
+  The prospecting app is still branded SalesLord in user-facing strings; it will
+  be renamed ProspectLord when user-facing rename work happens.
+- **ProspectLord** — rename target for the current prospecting app.
+- **CELord** — CE signal detection app. Shares packages and Supabase project.
+- **TerritoryLord** — territory whitespace app. Not yet built.
 
-## Stage 1 repo structure
+## Repo structure
 
 ```
-saleslord/
+saleslord/                  (monorepo root)
 ├── CLAUDE.md               (this file — shared platform context)
 ├── HANDOFF.md              (pointer to active work)
+├── pnpm-workspace.yaml     (workspace config)
+├── turbo.json              (build pipeline)
+├── tsconfig.base.json      (base TS config extended by all packages)
 ├── docs/
 │   ├── prospectlord/       (ProspectLord CLAUDE/HANDOFF/BACKLOG)
-│   └── celord/             (CELord CLAUDE/HANDOFF/BACKLOG)
-├── core/                   (shared domain model — package-in-waiting)
-├── signals/                (CELord collectors/enrichment/scoring — package-in-waiting)
-├── proxy.ts                (Next.js 16 auth middleware — covers ALL routes)
-├── vercel.json             (cron config)
-├── supabase/
-│   └── schema.sql          (source of truth for all DB tables)
-├── lib/                    (ProspectLord utilities — admin.ts, crypto.ts, utils.ts, etc.)
-├── components/             (ProspectLord UI components)
-└── app/
-    ├── layout.tsx          (root layout — platform top ribbon lives here)
-    ├── globals.css         (design tokens + Tailwind)
-    ├── login/
-    ├── access-denied/
-    ├── auth/callback/
-    ├── (app)/              (ProspectLord route group)
-    └── (celord)/           (CELord route group)
+│   ├── celord/             (CELord CLAUDE/HANDOFF/BACKLOG)
+│   └── territorylord/      (TerritoryLord CLAUDE/HANDOFF/BACKLOG)
+├── packages/
+│   ├── core/               (@saleslord/core — Organization, types, enums)
+│   ├── signals/            (@saleslord/signals — collectors, enrichment, scoring, persist)
+│   └── db/                 (@saleslord/db — schema.sql, migrations)
+└── apps/
+    └── web/                (@saleslord/web — single Next.js app, all products)
+        ├── proxy.ts        (Next.js 16 auth middleware — covers ALL routes)
+        ├── vercel.json     (cron config + function timeouts)
+        ├── app/
+        │   ├── layout.tsx          (root layout — platform ribbon)
+        │   ├── globals.css         (design tokens + Tailwind)
+        │   ├── login/
+        │   ├── access-denied/
+        │   ├── auth/callback/
+        │   ├── (app)/              (ProspectLord routes)
+        │   ├── celord/             (CELord routes)
+        │   └── (territorylord)/    (TerritoryLord routes — future)
+        ├── components/             (app-specific UI components)
+        └── lib/                    (ProspectLord utilities)
 ```
 
 ## Shared tech stack
@@ -94,16 +102,29 @@ See `.env.local.example` for the full reference.
 - **Live URL**: https://saleslord-theta.vercel.app
 - **GitHub**: https://github.com/birddogdataservices/saleslord
 - **Vercel account**: birddogdataservices (Hobby plan — public repo required)
+- **Vercel Root Directory**: `apps/web` — must be set in Vercel project settings
 - Vercel auto-deploys on every push to `main`
 - Supabase auth redirect URLs must include the Vercel domain in Authentication → URL Configuration
 
+## Local dev
+
+```bash
+# From repo root:
+pnpm install
+pnpm dev        # runs turbo dev --filter=@saleslord/web → next dev in apps/web
+
+# Or directly from apps/web (after pnpm install at root):
+cd apps/web && pnpm dev
+```
+
+Copy `.env.local` into `apps/web/` for local dev. The `.env.local` file is not
+at the repo root — Next.js looks for it relative to the app directory.
+
 ## Versioning
 
-Semver tags on `main` at meaningful milestones. `package.json` version is not
-kept in sync until Stage 2 (when packages are published). Tags are the source
-of truth.
+Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v0.7.0** (CELord Session 7 — Docker Hub collector, signal date column, source/date filters)
+Current version: **v0.8.0** (Stage 2 monorepo restructure — apps/web + packages/core,signals,db)
 
 **Tag after merging to main:**
 ```bash
@@ -114,7 +135,7 @@ git tag v0.X.0 && git push origin v0.X.0
 Increment guide:
 - **patch** (0.x.1) — bug fixes, copy changes, minor UI tweaks
 - **minor** (0.x+1.0) — new feature or session milestone (new collector, new app section, enrichment, etc.)
-- **major** (1.0.0) — Stage 2 monorepo restructure / ProspectLord rename
+- **major** (1.0.0) — reserved for a platform milestone (e.g. first paid customer, public launch)
 
 ## Next.js 16 notes (apply to both apps)
 
@@ -147,12 +168,13 @@ Increment guide:
   collector API keys)
 - Call Anthropic client-side
 - Skip RLS on client Supabase queries
-- Import `lib/supabase/admin.ts` from anywhere outside `app/api/*`
-- Import across the app boundary — ProspectLord files must not import from
-  `app/(celord)/`, CELord files must not import from `app/(app)/`,
+- Import `apps/web/lib/supabase/admin.ts` from anywhere outside `apps/web/app/api/*`
+- Import across the route boundary — ProspectLord files must not import from
+  `app/celord/`, CELord files must not import from `app/(app)/`,
   `components/prospect/`, or `lib/`
-- Add Supabase client imports inside `core/` or `signals/` — pass as dependency
-- Touch the other app's code when working on one app
+- Add Supabase client imports inside `packages/core/` or `packages/signals/` — pass as dependency
+- Reach from `packages/` into `apps/` — dependency arrows flow one way only
+- Touch another app's route code when working on one app
 
 ## Supabase admin client pattern
 
