@@ -29,16 +29,16 @@
     }
   ],
   "functions": {
-    "apps/web/app/api/research/route.ts": { "maxDuration": 300 },
-    "apps/web/app/api/check-updates/route.ts": { "maxDuration": 300 },
-    "apps/web/app/api/refresh-email/route.ts": { "maxDuration": 30 },
-    "apps/web/app/api/admin/case-studies/import-deck/route.ts": { "maxDuration": 120 },
-    "apps/web/app/api/case-studies/match/route.ts": { "maxDuration": 30 },
-    "apps/web/app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 },
-    "apps/web/app/api/celord/collect/github/route.ts": { "maxDuration": 60 },
-    "apps/web/app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 },
-    "apps/web/app/api/celord/collect/stackoverflow/route.ts": { "maxDuration": 30 },
-    "apps/web/app/api/celord/collect/dockerhub/route.ts": { "maxDuration": 60 },
-    "apps/web/app/api/celord/enrich/route.ts": { "maxDuration": 300 }
+    "app/api/research/route.ts": { "maxDuration": 300 },
+    "app/api/check-updates/route.ts": { "maxDuration": 300 },
+    "app/api/refresh-email/route.ts": { "maxDuration": 30 },
+    "app/api/admin/case-studies/import-deck/route.ts": { "maxDuration": 120 },
+    "app/api/case-studies/match/route.ts": { "maxDuration": 30 },
+    "app/api/case-studies/export-pdf/route.ts": { "maxDuration": 30 },
+    "app/api/celord/collect/github/route.ts": { "maxDuration": 60 },
+    "app/api/celord/collect/jobs/route.ts": { "maxDuration": 30 },
+    "app/api/celord/collect/stackoverflow/route.ts": { "maxDuration": 30 },
+    "app/api/celord/collect/dockerhub/route.ts": { "maxDuration": 60 },
+    "app/api/celord/enrich/route.ts": { "maxDuration": 300 }
   }
 }
