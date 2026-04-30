@@ -9,6 +9,7 @@
     "type-check": "turbo type-check"
   },
   "devDependencies": {
+    "next": "16.2.2",
     "turbo": "^2.5.4",
     "typescript": "^5"
   }
