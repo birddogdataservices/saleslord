@@ -133,35 +133,39 @@ the platform a platform.
 
 ## Repo structure (post-Stage 2)
 
-TerritoryLord lives at `apps/territorylord/` in the monorepo.
+TerritoryLord routes live inside `apps/web/` — the single Next.js app that
+hosts all products. There is no separate `apps/territorylord/` deployment;
+all three products share one Vercel deployment.
 
 ```
 saleslord/                  (monorepo root)
 ├── apps/
-│   ├── prospectlord/
-│   ├── celord/
-│   └── territorylord/      (this app)
+│   └── web/                                 (single Next.js app — all products)
 │       ├── app/
-│       │   ├── (territorylord)/
-│       │   │   ├── territory/page.tsx       (territory definition)
-│       │   │   ├── icp/page.tsx             (ICP profile editor)
-│       │   │   ├── runs/page.tsx            (run history + new run)
-│       │   │   ├── runs/[id]/page.tsx       (results table)
-│       │   │   └── admin/page.tsx           (manual triggers, mirroring CELord)
-│       │   └── api/
-│       │       ├── runs/route.ts            (POST: create + execute run)
-│       │       └── candidates/[id]/route.ts (PATCH: accept/reject/promote)
-│       └── components/                      (TerritoryLord-only UI)
+│       │   ├── (app)/                       (ProspectLord routes)
+│       │   ├── celord/                      (CELord routes)
+│       │   └── territorylord/               (TerritoryLord routes — NEW)
+│       │       ├── territory/page.tsx       (territory definition)
+│       │       ├── icp/page.tsx             (ICP profile editor)
+│       │       ├── runs/page.tsx            (run history + new run)
+│       │       ├── runs/[id]/page.tsx       (results table)
+│       │       └── admin/page.tsx           (manual triggers, mirroring CELord)
+│       └── app/api/territorylord/
+│           ├── runs/route.ts                (POST: create + execute run)
+│           └── candidates/[id]/route.ts     (PATCH: accept/reject/promote)
 ├── packages/
 │   ├── core/                                (shared — Organization, types)
 │   ├── signals/                             (shared — collectors, persist, enrichment)
-│   │   └── collectors/
+│   │   └── src/collectors/
 │   │       ├── opencorporates.ts            (NEW for TerritoryLord)
 │   │       └── ... existing CELord collectors
 │   ├── db/                                  (shared — schema + migrations)
 │   └── ui/                                  (Stage 3, not yet)
 └── docs/territorylord/                      (this doc + HANDOFF + BACKLOG)
 ```
+
+Route segment is `territorylord/` (real segment, matching the `celord/`
+convention — not a route group).
 
 ## Package-in-waiting → packages discipline
 
