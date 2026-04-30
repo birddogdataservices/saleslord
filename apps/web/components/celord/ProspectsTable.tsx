@@ -22,6 +22,7 @@ const SOURCE_LABEL: Record<SignalSource, string> = {
   forum:         'Forum',
   stackoverflow: 'Stack Overflow',
   conference:    'Conference',
+  wikidata:      'Wikidata',
 }
 
 const SOURCE_COLOR: Record<SignalSource, string> = {
@@ -31,6 +32,7 @@ const SOURCE_COLOR: Record<SignalSource, string> = {
   forum:         'bg-amber-100 text-amber-700',
   stackoverflow: 'bg-orange-100 text-orange-700',
   conference:    'bg-teal-100 text-teal-700',
+  wikidata:      'bg-gray-100 text-gray-700',
 }
 
 // STATUS_OPTIONS and STATUS_BADGE imported from ./statusConfig

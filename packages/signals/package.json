@@ -11,7 +11,9 @@
     "./collectors/github": "./src/collectors/github.ts",
     "./collectors/jobs": "./src/collectors/jobs.ts",
     "./collectors/stackoverflow": "./src/collectors/stackoverflow.ts",
-    "./collectors/dockerhub": "./src/collectors/dockerhub.ts"
+    "./collectors/dockerhub": "./src/collectors/dockerhub.ts",
+    "./collectors/wikidata": "./src/collectors/wikidata.ts",
+    "./classifyIndustry": "./src/classifyIndustry.ts"
   },
   "dependencies": {
     "@saleslord/core": "workspace:*",

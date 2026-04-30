@@ -5,12 +5,15 @@ import { usePathname } from 'next/navigation'
 
 export function PlatformRibbon() {
   const pathname = usePathname()
-  const isCelord = pathname.startsWith('/celord')
+  const isCelord      = pathname.startsWith('/celord')
+  const isTerritory   = pathname.startsWith('/territorylord')
+  const isProspect    = !isCelord && !isTerritory
 
   return (
     <div className="h-9 shrink-0 bg-[#18181A] border-b border-[var(--sl-border)] flex items-center px-3 gap-1">
-      <RibbonTab href="/" active={!isCelord} label="ProspectLord" />
-      <RibbonTab href="/celord/prospects" active={isCelord} label="CELord" />
+      <RibbonTab href="/territorylord/runs" active={isTerritory} label="TerritoryLord" />
+      <RibbonTab href="/"                   active={isProspect}  label="ProspectLord" />
+      <RibbonTab href="/celord/prospects"   active={isCelord}    label="CELord" />
     </div>
   )
 }

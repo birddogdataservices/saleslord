@@ -1,9 +1,30 @@
 # TerritoryLord — Handoff
 
-## Current state: ready to build (Workstream A complete)
+## Current state: v0 built, pending deployment
 
-Stage 2 monorepo restructure is done at v0.8.0. Workstream B (TerritoryLord v0)
-is the next session's work.
+TerritoryLord v0 is code-complete and builds cleanly. Pending:
+1. **Run the schema SQL** in Supabase — add the TerritoryLord tables (see `packages/db/schema.sql` bottom section)
+2. **Deploy** — merge the PR to `main`, Vercel auto-deploys
+3. **Smoke test** — set territory, create ICP profile, start a run for a small state (e.g. US-WY)
+
+**Source decision:** OpenCorporates replaced with **Wikidata SPARQL** (free, no key, global). Collector
+at `packages/signals/src/collectors/wikidata.ts`. Queries by ISO 3166-2 code via P300 property;
+finds orgs with P856 (website) in region (direct P131 or one city-hop). Capped at 500 results
+ordered by sitelinks count. Industry classification via Haiku 4.5 for orgs without Wikidata P452.
+
+**What was built:**
+- `packages/core/src/index.ts` — added `'wikidata'` to `SignalSource`
+- `packages/signals/src/collectors/wikidata.ts` — Wikidata SPARQL collector
+- `packages/signals/src/classifyIndustry.ts` — NAICS Haiku 4.5 classifier
+- `packages/signals/src/persist.ts` — added `orgMap` to `PersistResult` (source_url → org_id)
+- `packages/signals/src/scoring.ts` — added wikidata confidence score
+- `packages/db/schema.sql` — territories, icp_profiles, territorylord_runs, territorylord_candidates
+- `apps/web/app/territorylord/` — layout, territory, icp, runs, runs/[id], admin pages
+- `apps/web/app/api/territorylord/` — POST runs, PATCH candidates/[id]
+- `apps/web/components/PlatformRibbon.tsx` — TerritoryLord tab added (left of ProspectLord)
+- `apps/web/components/celord/ProspectsTable.tsx` — wikidata entry in SOURCE_LABEL/COLOR maps
+
+## Next session focus
 
 **Decisions made since the design session:**
 - OpenCorporates key: **BYOK** (matches existing Anthropic key pattern; platform-owned key backlogged)

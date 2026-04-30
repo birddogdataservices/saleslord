@@ -28,6 +28,7 @@ const SOURCE_CONFIDENCE: Record<SignalSource, number> = {
   jobs:          0.70,  // job posting = probable
   stackoverflow: 0.60,  // question = possible
   conference:    0.50,  // talk mention = possible
+  wikidata:      0.90,  // registry entity = high confidence org exists
 }
 
 // Keywords that raise the risk posture score.

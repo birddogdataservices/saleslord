@@ -17,6 +17,7 @@ export type PersistResult = {
   inserted: number    // new signals written
   skipped: number     // signals already in DB (deduped by source_url)
   orgsCreated: number
+  orgMap: Record<string, string>  // source_url → org_id for all resolved signals
 }
 
 // ─────────────────────────────────────────
@@ -100,6 +101,7 @@ export async function persistSignals(
   let inserted = 0
   let skipped = 0
   let orgsCreated = 0
+  const orgMap: Record<string, string> = {}
 
   // Fetch all existing org names once for fuzzy matching.
   const { data: existingOrgs } = await client
@@ -152,6 +154,8 @@ export async function persistSignals(
     }
 
     // ── 3. Upsert signal_link ─────────────────────────────────────
+    orgMap[signal.source_url] = orgId
+
     const confidence =
       method === 'domain_exact' ? 0.90 :
       method === 'fuzzy_name'   ? 0.70 :
@@ -165,7 +169,7 @@ export async function persistSignals(
       )
   }
 
-  return { inserted, skipped, orgsCreated }
+  return { inserted, skipped, orgsCreated, orgMap }
 }
 
 // ─────────────────────────────────────────

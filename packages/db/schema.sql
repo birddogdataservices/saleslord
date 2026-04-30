@@ -435,3 +435,102 @@ create index on org_status_history (org_id, changed_at desc);
 alter table enrichment_runs
   add column if not exists industry   text,
   add column if not exists approx_size text;  -- Enterprise | Mid-market | SMB | unknown
+
+-- ═════════════════════════════════════════
+-- TerritoryLord — Shared platform tables
+-- Shared across TerritoryLord (and future ProspectLord territory filtering).
+-- All writes go through API routes (service role).
+-- RLS allows users to manage their own data via rep_profiles FK.
+-- ═════════════════════════════════════════
+
+-- ─────────────────────────────────────────
+-- Territories (rep's assigned region codes)
+-- ─────────────────────────────────────────
+create table territories (
+  rep_id      uuid references rep_profiles(id) on delete cascade,
+  region_code text not null,           -- ISO 3166-2, e.g. 'US-CA', 'CA-ON'
+  primary key (rep_id, region_code)
+);
+alter table territories enable row level security;
+create policy "Users manage own territories"
+  on territories for all
+  using (exists (
+    select 1 from rep_profiles where id = territories.rep_id and user_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from rep_profiles where id = territories.rep_id and user_id = auth.uid()
+  ));
+
+-- ─────────────────────────────────────────
+-- ICP profiles (ideal customer profile)
+-- ─────────────────────────────────────────
+create table icp_profiles (
+  id          uuid primary key default gen_random_uuid(),
+  rep_id      uuid references rep_profiles(id) on delete cascade not null,
+  name        text not null,
+  industries  text[] default '{}',     -- NAICS 2-digit sector codes, e.g. '{31,51,52}'
+  size_hint   text,                    -- nullable: 'Enterprise' | 'Mid-market' | 'SMB'
+  created_at  timestamptz default now()
+);
+alter table icp_profiles enable row level security;
+create policy "Users manage own ICP profiles"
+  on icp_profiles for all
+  using (exists (
+    select 1 from rep_profiles where id = icp_profiles.rep_id and user_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from rep_profiles where id = icp_profiles.rep_id and user_id = auth.uid()
+  ));
+
+-- ─────────────────────────────────────────
+-- TerritoryLord runs
+-- ─────────────────────────────────────────
+create table territorylord_runs (
+  id               uuid primary key default gen_random_uuid(),
+  rep_id           uuid references rep_profiles(id) on delete cascade not null,
+  icp_profile_id   uuid references icp_profiles(id) on delete set null,
+  region_code      text not null,
+  status           text not null default 'pending',  -- pending | running | complete | failed
+  candidate_count  int default 0,
+  error            text,
+  created_at       timestamptz default now(),
+  completed_at     timestamptz
+);
+alter table territorylord_runs enable row level security;
+create policy "Users manage own runs"
+  on territorylord_runs for all
+  using (exists (
+    select 1 from rep_profiles where id = territorylord_runs.rep_id and user_id = auth.uid()
+  ));
+
+-- ─────────────────────────────────────────
+-- TerritoryLord candidates
+-- ─────────────────────────────────────────
+create table territorylord_candidates (
+  id            uuid primary key default gen_random_uuid(),
+  run_id        uuid references territorylord_runs(id) on delete cascade not null,
+  org_id        uuid references organizations(id) on delete cascade not null,
+  status        text not null default 'new',   -- new | accepted | rejected | promoted
+  reject_reason text,                          -- wrong_industry | too_small | not_real | duplicate | other
+  notes         text,
+  created_at    timestamptz default now(),
+  unique (run_id, org_id)
+);
+alter table territorylord_candidates enable row level security;
+create policy "Users manage own candidates via run"
+  on territorylord_candidates for all
+  using (exists (
+    select 1 from territorylord_runs r
+    join rep_profiles p on p.id = r.rep_id
+    where r.id = territorylord_candidates.run_id and p.user_id = auth.uid()
+  ));
+
+-- ─────────────────────────────────────────
+-- TerritoryLord indexes
+-- ─────────────────────────────────────────
+create index on territories              (rep_id);
+create index on icp_profiles             (rep_id, created_at desc);
+create index on territorylord_runs       (rep_id, created_at desc);
+create index on territorylord_runs       (status);
+create index on territorylord_candidates (run_id, status);
+create index on territorylord_candidates (org_id);
