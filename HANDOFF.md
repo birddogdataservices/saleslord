@@ -1,6 +1,6 @@
 # SalesLord Platform — Handoff
 
-## Current state: v0.8.0 — Stage 2 monorepo restructure complete
+## Current state: v0.9.0 — TerritoryLord v0 built, pending deploy
 
 Stage 2 is done and deployed. The repo is now a pnpm monorepo:
 
@@ -22,22 +22,16 @@ https://saleslord-theta.vercel.app after migration.
 - Output: `apps/web/.next`
 - `next` listed in root `package.json` devDependencies — required for Vercel framework detection
 
-## Next: TerritoryLord v0
+## TerritoryLord v0: code complete, needs SQL + deploy
 
-See [`docs/territorylord/CLAUDE.md`](docs/territorylord/CLAUDE.md) for full architecture.
-See [`docs/territorylord/HANDOFF.md`](docs/territorylord/HANDOFF.md) for implementation plan.
-See [`docs/territorylord/BACKLOG.md`](docs/territorylord/BACKLOG.md) for post-v0 backlog.
+See [`docs/territorylord/HANDOFF.md`](docs/territorylord/HANDOFF.md) for what was built.
 
-**Open questions to answer at session start (from HANDOFF):**
-- OpenCorporates BYOK key: Jon decided BYOK (matches existing Anthropic key pattern)
-- Industry tags: NAICS chosen for v0
-- Subdomains/separate deployments: deferred to lowest-priority backlog
+**To activate:**
+1. Run the TerritoryLord schema block at the bottom of `packages/db/schema.sql` in Supabase SQL editor
+2. Merge PR to `main` → Vercel auto-deploys
+3. Smoke test: set territory → create ICP profile → start a run (try US-WY — small state, fast query)
 
-The HANDOFF verification checklist has been completed this session:
-- `core/` shape confirmed ✓ (Organization, Location, OrgType, CustomerStatus all exist)
-- `signals/` shape confirmed ✓ (Collector, RawSignal, CollectorConfig, persist, enrichment)
-- Route group convention confirmed ✓ (`app/celord/` real segment, not route group)
-- Cron + admin patterns confirmed ✓
+**Data source:** Wikidata SPARQL (free, no key) instead of OpenCorporates (commercial-only)
 
 ## ProspectLord status: stable at v0.7.0
 

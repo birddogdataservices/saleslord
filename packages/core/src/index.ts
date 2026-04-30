@@ -26,6 +26,7 @@ export type SignalSource =
   | 'forum'
   | 'stackoverflow'
   | 'conference'
+  | 'wikidata'
 
 export type ResolutionMethod =
   | 'domain_exact'

@@ -26,7 +26,9 @@
       "Bash(COREPACK_ENABLE_STRICT=0 pnpm install)",
       "Bash(cp \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\apps\\\\web\\\\.env.local\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\apps\\\\web\\\\.env.local\")",
       "Bash(cp \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.env.local\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\apps\\\\web\\\\.env.local\")",
-      "Bash(COREPACK_ENABLE_STRICT=0 pnpm build)"
+      "Bash(COREPACK_ENABLE_STRICT=0 pnpm build)",
+      "Bash(pnpm --filter @saleslord/web build)",
+      "Bash(pnpm install *)"
     ]
   }
 }
