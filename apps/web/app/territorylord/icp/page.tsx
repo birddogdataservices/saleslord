@@ -194,7 +194,7 @@ function IcpForm({
       <div>
         <label className="text-xs font-medium text-gray-700 block mb-2">Industries (leave empty for all)</label>
         <div className="flex flex-wrap gap-2">
-          {NAICS_SECTORS.filter(s => s.code !== '99').map(s => (
+          {[...NAICS_SECTORS].filter(s => s.code !== '99').sort((a, b) => a.label.localeCompare(b.label)).map(s => (
             <button
               key={s.code}
               type="button"
