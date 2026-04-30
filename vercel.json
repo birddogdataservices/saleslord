@@ -1,4 +1,7 @@
 {
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter @saleslord/web build",
+  "outputDirectory": "apps/web/.next",
   "crons": [
     {
       "path": "/api/cron/refresh-all",
