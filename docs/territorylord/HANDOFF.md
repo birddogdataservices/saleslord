@@ -1,47 +1,27 @@
 # TerritoryLord — Handoff
 
-## Current state: not yet built
+## Current state: ready to build (Workstream A complete)
 
-TerritoryLord is the third app in the SalesLord platform, joining ProspectLord
-(at v0.7.0, currently called SalesLord in user-facing strings) and CELord
-(v0 feature-complete as of Session 7). This doc covers the design decisions
-made in the design session; implementation has not started.
+Stage 2 monorepo restructure is done at v0.8.0. Workstream B (TerritoryLord v0)
+is the next session's work.
 
-See `docs/territorylord/CLAUDE.md` for full architectural context.
-See `docs/celord/CLAUDE.md` and `docs/celord/HANDOFF.md` for the established
-patterns this app follows.
-See `docs/prospectlord/` for the existing ProspectLord app.
+**Decisions made since the design session:**
+- OpenCorporates key: **BYOK** (matches existing Anthropic key pattern; platform-owned key backlogged)
+- Industry classification: **NAICS** chosen for v0
+- Deployment: **single `apps/web/` deployment** — no separate subdomain for TerritoryLord.
+  TerritoryLord routes live at `apps/web/app/territorylord/` (real segment, matching
+  `celord/` convention). Separate deployment is lowest-priority backlog.
 
-## ⚠️ Verify before building
-
-This handoff was written in a Chat session that did **not** have access to the
-current state of the repo. Before implementing, Code should verify:
-
-1. **Confirm the actual current state of the repo** — the design assumed CELord
-   was at the v0 state described in `docs/celord/HANDOFF.md` Session 7. If
-   sessions 8+ have shipped since, re-read the latest CELord HANDOFF and
-   reconcile any drift before applying these plans.
-2. **Confirm `core/` shape** — the design assumes `Organization`, `Location`,
-   `OrgType`, `CustomerStatus`, and the parent/subsidiary relationship already
-   live in `core/types.ts`. Verify these exist before treating them as shared.
-   If the shape has evolved, adapt the TerritoryLord plans to match what's
-   actually there.
-3. **Confirm `signals/` shape** — the design assumes the collector pattern
-   (`Collector`, `RawSignal`, `CollectorConfig` in `signals/collectors/types.ts`),
-   `signals/persist.ts` for entity resolution, and `signals/enrichment.ts` for
-   Haiku enrichment all exist as described. Verify before reusing.
-4. **Confirm route group convention** — Session 1 of CELord used `app/celord/`
-   as a real route segment. The CELord HANDOFF Session 1 entry mentions
-   `app/(celord)/` (route group), but Session 1's locked decision in the
-   "Repo structure decisions" block at the top of `docs/celord/HANDOFF.md`
-   says `app/celord/` (real segment). Verify which pattern actually shipped
-   and match it for TerritoryLord (`app/territorylord/` vs `app/(territorylord)/`).
-5. **Confirm cron + admin patterns** — the design assumes a per-collector cron
-   route + an admin page at `/celord/admin` with manual trigger buttons. Verify
-   these patterns exist before mirroring them for TerritoryLord.
-
-If any of these don't match reality, **stop and ask Jon** before improvising.
-The "package-in-waiting" discipline depends on these patterns being consistent.
+**Verification checklist — all confirmed:**
+1. ✅ Repo state confirmed — CELord at v0 Session 7 as assumed
+2. ✅ `core/` shape confirmed — `Organization`, `Location`, `OrgType`, `CustomerStatus`
+   all exist in `packages/core/src/index.ts`
+3. ✅ `signals/` shape confirmed — `Collector`, `RawSignal`, `CollectorConfig` in
+   `packages/signals/src/collectors/types.ts`; `persist.ts`, `enrichment.ts` present
+4. ✅ Route convention confirmed — `app/celord/` real segment; TerritoryLord uses
+   `app/territorylord/` (real segment, no route group wrapper)
+5. ✅ Cron + admin patterns confirmed — `app/celord/admin/page.tsx` exists with
+   manual trigger buttons; per-collector cron routes under `app/api/celord/collect/`
 
 ## Decision log from the design session
 
