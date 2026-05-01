@@ -1,8 +1,10 @@
 # SalesLord Platform — Handoff
 
-## Current state: v0.9.0 — TerritoryLord v0 built, pending deploy
+## Current state: v1.0.0 — TerritoryLord live, first run complete
 
-Stage 2 is done and deployed. The repo is now a pnpm monorepo:
+Stage 2 monorepo done. TerritoryLord v0 shipped and producing results — first
+run returned 465 candidate organizations (Public Administration + Educational
+Services ICP). Next focus: candidate filtering and size/revenue enrichment.
 
 ```
 saleslord/
@@ -12,9 +14,6 @@ saleslord/
 └── packages/db/        @saleslord/db — schema.sql
 ```
 
-Both ProspectLord and CELord verified working in production at
-https://saleslord-theta.vercel.app after migration.
-
 **Vercel config (do not change):**
 - Root Directory: blank
 - Install: `pnpm install`
@@ -22,16 +21,15 @@ https://saleslord-theta.vercel.app after migration.
 - Output: `apps/web/.next`
 - `next` listed in root `package.json` devDependencies — required for Vercel framework detection
 
-## TerritoryLord v0: code complete, needs SQL + deploy
+## TerritoryLord: next session — candidate filtering
 
-See [`docs/territorylord/HANDOFF.md`](docs/territorylord/HANDOFF.md) for what was built.
+See [`docs/territorylord/HANDOFF.md`](docs/territorylord/HANDOFF.md) for full detail.
 
-**To activate:**
-1. Run the TerritoryLord schema block at the bottom of `packages/db/schema.sql` in Supabase SQL editor
-2. Merge PR to `main` → Vercel auto-deploys
-3. Smoke test: set territory → create ICP profile → start a run (try US-WY — small state, fast query)
+**Priority:** 465 orgs returned with no revenue/headcount visibility. Next
+session should pull Wikidata P1082 (employee count), wire ICP `size_hint`
+filter to it, and improve the results table (sort, filter by status, bulk actions).
 
-**Data source:** Wikidata SPARQL (free, no key) instead of OpenCorporates (commercial-only)
+**Data source:** Wikidata SPARQL (free, no key)
 
 ## ProspectLord status: stable at v0.7.0
 
