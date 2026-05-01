@@ -4,38 +4,21 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import nextDynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 
-// ── Region data ───────────────────────────────────────────────
+// ── Lazy-load map (SVG, no SSR needed) ───────────────────────────
+const TerritoryMap = nextDynamic(
+  () => import('@/components/territorylord/TerritoryMap'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full aspect-[1.6] bg-gray-100 rounded animate-pulse" />
+    ),
+  }
+)
 
-const US_STATES: { code: string; label: string }[] = [
-  { code: 'US-AL', label: 'Alabama' },       { code: 'US-AK', label: 'Alaska' },
-  { code: 'US-AZ', label: 'Arizona' },       { code: 'US-AR', label: 'Arkansas' },
-  { code: 'US-CA', label: 'California' },    { code: 'US-CO', label: 'Colorado' },
-  { code: 'US-CT', label: 'Connecticut' },   { code: 'US-DE', label: 'Delaware' },
-  { code: 'US-FL', label: 'Florida' },       { code: 'US-GA', label: 'Georgia' },
-  { code: 'US-HI', label: 'Hawaii' },        { code: 'US-ID', label: 'Idaho' },
-  { code: 'US-IL', label: 'Illinois' },      { code: 'US-IN', label: 'Indiana' },
-  { code: 'US-IA', label: 'Iowa' },          { code: 'US-KS', label: 'Kansas' },
-  { code: 'US-KY', label: 'Kentucky' },      { code: 'US-LA', label: 'Louisiana' },
-  { code: 'US-ME', label: 'Maine' },         { code: 'US-MD', label: 'Maryland' },
-  { code: 'US-MA', label: 'Massachusetts' }, { code: 'US-MI', label: 'Michigan' },
-  { code: 'US-MN', label: 'Minnesota' },     { code: 'US-MS', label: 'Mississippi' },
-  { code: 'US-MO', label: 'Missouri' },      { code: 'US-MT', label: 'Montana' },
-  { code: 'US-NE', label: 'Nebraska' },      { code: 'US-NV', label: 'Nevada' },
-  { code: 'US-NH', label: 'New Hampshire' }, { code: 'US-NJ', label: 'New Jersey' },
-  { code: 'US-NM', label: 'New Mexico' },    { code: 'US-NY', label: 'New York' },
-  { code: 'US-NC', label: 'North Carolina' },{ code: 'US-ND', label: 'North Dakota' },
-  { code: 'US-OH', label: 'Ohio' },          { code: 'US-OK', label: 'Oklahoma' },
-  { code: 'US-OR', label: 'Oregon' },        { code: 'US-PA', label: 'Pennsylvania' },
-  { code: 'US-RI', label: 'Rhode Island' },  { code: 'US-SC', label: 'South Carolina' },
-  { code: 'US-SD', label: 'South Dakota' },  { code: 'US-TN', label: 'Tennessee' },
-  { code: 'US-TX', label: 'Texas' },         { code: 'US-UT', label: 'Utah' },
-  { code: 'US-VT', label: 'Vermont' },       { code: 'US-VA', label: 'Virginia' },
-  { code: 'US-WA', label: 'Washington' },    { code: 'US-WV', label: 'West Virginia' },
-  { code: 'US-WI', label: 'Wisconsin' },     { code: 'US-WY', label: 'Wyoming' },
-  { code: 'US-DC', label: 'Washington DC' },
-]
+// ── Region data ───────────────────────────────────────────────────
 
 const CA_PROVINCES: { code: string; label: string }[] = [
   { code: 'CA-AB', label: 'Alberta' },          { code: 'CA-BC', label: 'British Columbia' },
@@ -47,7 +30,7 @@ const CA_PROVINCES: { code: string; label: string }[] = [
   { code: 'CA-YT', label: 'Yukon' },
 ]
 
-// ── Component ─────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────
 
 export default function TerritoryPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -87,7 +70,6 @@ export default function TerritoryPage() {
     setSaving(true)
     const supabase = createClient()
     try {
-      // Fetch current saved codes to compute diff
       const { data: existing } = await supabase
         .from('territories').select('region_code').eq('rep_id', repId)
       const existingCodes = new Set((existing ?? []).map((r: { region_code: string }) => r.region_code))
@@ -113,6 +95,8 @@ export default function TerritoryPage() {
 
   if (loading) return <div className="flex flex-col flex-1 min-h-0 overflow-auto bg-white p-6 text-sm text-gray-400">Loading…</div>
 
+  const usSelected = [...selected].filter(c => c.startsWith('US-'))
+
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-auto bg-white">
       <div className="px-6 py-4 border-b border-gray-200 shrink-0 flex items-center justify-between">
@@ -121,7 +105,7 @@ export default function TerritoryPage() {
             ← Back to runs
           </Link>
           <h1 className="text-xl font-semibold text-gray-900">My territory</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Select the states and provinces in your territory.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Click states on the map to add them to your territory.</p>
         </div>
         <div className="flex items-center gap-3">
           {savedAt && (
@@ -138,49 +122,44 @@ export default function TerritoryPage() {
         </div>
       </div>
 
-      <div className="flex-1 px-6 py-6 space-y-8">
-        <RegionGroup
-          heading="United States"
-          regions={US_STATES}
-          selected={selected}
-          onToggle={toggle}
-        />
-        <RegionGroup
-          heading="Canada"
-          regions={CA_PROVINCES}
-          selected={selected}
-          onToggle={toggle}
-        />
-      </div>
-    </div>
-  )
-}
+      <div className="flex-1 px-6 py-6 space-y-8 max-w-3xl">
 
-function RegionGroup({
-  heading, regions, selected, onToggle,
-}: {
-  heading: string
-  regions: { code: string; label: string }[]
-  selected: Set<string>
-  onToggle: (code: string) => void
-}) {
-  return (
-    <div>
-      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">{heading}</h2>
-      <div className="flex flex-wrap gap-2">
-        {regions.map(r => (
-          <button
-            key={r.code}
-            onClick={() => onToggle(r.code)}
-            className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-              selected.has(r.code)
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+        {/* US — interactive map */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">United States</h2>
+            {usSelected.length > 0 && (
+              <span className="text-xs text-gray-400">{usSelected.length} state{usSelected.length !== 1 ? 's' : ''} selected</span>
+            )}
+          </div>
+          <TerritoryMap selected={selected} onToggle={toggle} />
+          {usSelected.length > 0 && (
+            <p className="mt-2 text-xs text-gray-400 leading-relaxed">
+              {usSelected.sort().join(' · ')}
+            </p>
+          )}
+        </div>
+
+        {/* Canada — chips */}
+        <div>
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Canada</h2>
+          <div className="flex flex-wrap gap-2">
+            {CA_PROVINCES.map(r => (
+              <button
+                key={r.code}
+                onClick={() => toggle(r.code)}
+                className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                  selected.has(r.code)
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
       </div>
     </div>
   )
