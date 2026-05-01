@@ -1,238 +1,103 @@
 # TerritoryLord — Handoff
 
-## Current state: v0 built, pending deployment
+## Current state: v0 live, first run complete (465 orgs)
 
-TerritoryLord v0 is code-complete and builds cleanly. Pending:
-1. **Run the schema SQL** in Supabase — add the TerritoryLord tables (see `packages/db/schema.sql` bottom section)
-2. **Deploy** — merge the PR to `main`, Vercel auto-deploys
-3. **Smoke test** — set territory, create ICP profile, start a run for a small state (e.g. US-WY)
+TerritoryLord v0 is deployed and working end-to-end. First run completed
+successfully: Public Administration + Educational Services ICP against a US
+state returned **465 candidate organizations**.
 
-**Source decision:** OpenCorporates replaced with **Wikidata SPARQL** (free, no key, global). Collector
-at `packages/signals/src/collectors/wikidata.ts`. Queries by ISO 3166-2 code via P300 property;
-finds orgs with P856 (website) in region (direct P131 or one city-hop). Capped at 500 results
-ordered by sitelinks count. Industry classification via Haiku 4.5 for orgs without Wikidata P452.
+**What's live:**
+- Territory page — single unified North America map (US states + Canadian
+  provinces), fills viewport, zooms to selection, hover tooltips with region
+  name, frosted-glass selected-regions overlay
+- ICP profiles — NAICS sector chips (alphabetical, 20 sectors including
+  Public Administration 92), size hint picker
+- Runs — new run form (region + ICP), run history list, results table with
+  accept/reject/promote actions
+- Admin page — manual run trigger for testing
 
-**What was built:**
+**Data source:** Wikidata SPARQL (free, no key). Collector at
+`packages/signals/src/collectors/wikidata.ts`. Queries P300 (ISO 3166-2
+region), P856 (website required), P452 (industry where available), ordered
+by sitelinks count, capped at 500. Haiku 4.5 classifies industry for orgs
+without P452.
+
+**Territory map tech:**
+- `react-simple-maps` v3 with `ZoomableGroup` for auto-zoom
+- Single `ComposableMap` with two `Geographies` layers — `us-atlas@3` for
+  US states, `codeforamerica/click_that_hood` GeoJSON for Canadian provinces
+- `TerritoryMap` component is generic (`layers[]` array) — adding more
+  countries is a one-liner
+- `getTooltipExtra` hook stubbed on `TerritoryMap` — ready to inject per-region
+  org discovery / briefed counts into the hover tooltip in a future session
+- Type declaration shim for `react-simple-maps` at `apps/web/types/react-simple-maps.d.ts`
+
+**What was built this session:**
 - `packages/core/src/index.ts` — added `'wikidata'` to `SignalSource`
 - `packages/signals/src/collectors/wikidata.ts` — Wikidata SPARQL collector
-- `packages/signals/src/classifyIndustry.ts` — NAICS Haiku 4.5 classifier
-- `packages/signals/src/persist.ts` — added `orgMap` to `PersistResult` (source_url → org_id)
+- `packages/signals/src/classifyIndustry.ts` — NAICS Haiku 4.5 classifier (20
+  sectors, code 99 = unknown filtered from ICP picker)
+- `packages/signals/src/persist.ts` — added `orgMap` to `PersistResult`
 - `packages/signals/src/scoring.ts` — added wikidata confidence score
-- `packages/db/schema.sql` — territories, icp_profiles, territorylord_runs, territorylord_candidates
-- `apps/web/app/territorylord/` — layout, territory, icp, runs, runs/[id], admin pages
+- `packages/db/schema.sql` — territories, icp_profiles, territorylord_runs,
+  territorylord_candidates tables + RLS policies
+- `apps/web/app/territorylord/` — layout, territory, icp, runs, runs/[id], admin
 - `apps/web/app/api/territorylord/` — POST runs, PATCH candidates/[id]
-- `apps/web/components/PlatformRibbon.tsx` — TerritoryLord tab added (left of ProspectLord)
-- `apps/web/components/celord/ProspectsTable.tsx` — wikidata entry in SOURCE_LABEL/COLOR maps
+- `apps/web/components/territorylord/TerritoryMap.tsx` — interactive map component
+- `apps/web/types/react-simple-maps.d.ts` — type declaration shim
+- `apps/web/components/PlatformRibbon.tsx` — TerritoryLord tab added
 
-## Next session focus
+## Next session focus: candidate filtering + enrichment
 
-**Decisions made since the design session:**
-- OpenCorporates key: **BYOK** (matches existing Anthropic key pattern; platform-owned key backlogged)
-- Industry classification: **NAICS** chosen for v0
-- Deployment: **single `apps/web/` deployment** — no separate subdomain for TerritoryLord.
-  TerritoryLord routes live at `apps/web/app/territorylord/` (real segment, matching
-  `celord/` convention). Separate deployment is lowest-priority backlog.
+**The problem:** 465 candidates returned with no visibility into revenue or
+headcount. Without size/revenue signals the rep can't efficiently filter to
+accounts worth pursuing. Need better pre-filtering at collection time and/or
+richer display in the results table.
 
-**Verification checklist — all confirmed:**
-1. ✅ Repo state confirmed — CELord at v0 Session 7 as assumed
-2. ✅ `core/` shape confirmed — `Organization`, `Location`, `OrgType`, `CustomerStatus`
-   all exist in `packages/core/src/index.ts`
-3. ✅ `signals/` shape confirmed — `Collector`, `RawSignal`, `CollectorConfig` in
-   `packages/signals/src/collectors/types.ts`; `persist.ts`, `enrichment.ts` present
-4. ✅ Route convention confirmed — `app/celord/` real segment; TerritoryLord uses
-   `app/territorylord/` (real segment, no route group wrapper)
-5. ✅ Cron + admin patterns confirmed — `app/celord/admin/page.tsx` exists with
-   manual trigger buttons; per-collector cron routes under `app/api/celord/collect/`
+**Options to evaluate (pick one approach before starting):**
 
-## Decision log from the design session
+1. **Wikidata employee count** — P1082 (number of employees) is available on
+   some Wikidata entries. Pull it in the SPARQL query at zero extra cost. Coverage
+   will be partial but better than nothing for well-known orgs.
 
-The design session reached the following conclusions, in order:
+2. **Wikipedia/Wikidata description enrichment** — schema:description is already
+   pulled. Surface it in the results table so reps can scan faster without needing
+   revenue/headcount numbers.
 
-1. **Problem framing.** TerritoryLord solves "I know my territory but don't know
-   every org in it that fits my ICP and is plausibly a buyer." Goal is
-   **enumeration, not qualification** — fill the hopper of accounts in territory
-   with enough size to plausibly have IT budget for enterprise data management
-   software. Sales motion qualifies; this just enumerates.
+3. **ICP size-hint pre-filter** — currently `size_hint` on the ICP profile is
+   stored but not used as a filter during the run. Wire it to the Wikidata query
+   or post-collection filter using employee count (if pulled).
 
-2. **Territory primitive.** A rep's territory is a set of state/province codes
-   in ISO 3166-2 format (`US-CA`, `CA-ON`, etc.). Determined by company HQ.
-   Territory definition lives in a `territories` table; chunking is an
-   execution concern, not part of territory identity.
+4. **Results table improvements** — the 465-org table is hard to work through
+   without sort/filter controls. Add: sortable columns, filter by status (new /
+   accepted / rejected), bulk accept/reject.
 
-3. **Required fields at this stage.** Account name, industry, revenue band,
-   HQ location. **Revenue band has been deprioritized** — Jon confirmed
-   precision isn't needed at the enumeration stage; ProspectLord briefs handle
-   per-account revenue research as part of the existing prospect workflow.
-   v1 ships **without revenue data**. Optional employee-count proxy is
-   backlogged.
+**Likely right answer for next session:** pull P1082 employee count from Wikidata
+(free, already in the graph), surface it in the results table, and wire the ICP
+`size_hint` filter to it. Then improve the results table with basic sort/filter.
 
-4. **Free-source-first strategy.** Jon explicitly chose to start with free
-   public data (OpenCorporates as spine, Claude classification for industry
-   gaps), evaluate the noise/usefulness tradeoff, and only move to paid
-   firmographic providers (Apollo, ZoomInfo, etc.) if free results prove
-   insufficient. v1 is a learning loop.
+## Decision log
 
-5. **Per-region execution.** Runs are scoped to one region (state/province)
-   at a time in v1. Multi-state runs in a single job are deferred. This keeps
-   the v1 implementation inside Vercel function limits without needing a
-   proper job queue (Inngest etc. is deferred).
+- **OpenCorporates:** replaced with Wikidata SPARQL — free, no key required,
+  good coverage of government + education entities
+- **NAICS vs freeform:** NAICS top-level codes chosen for v0; 20 sectors shown
+  as alphabetical chips in ICP profile editor
+- **NAICS 92 (Public Administration):** confirmed in ICP — state/local government
+  is explicitly in target ICP
+- **Revenue band:** deprioritized per original design doc — ProspectLord briefs
+  handle per-account revenue research
+- **Territory map:** single unified NA map (vs two separate maps) — simpler,
+  zoom handles the scale difference
+- **Subdomain:** all three apps in one deployment at Stage 1 — no separate
+  TerritoryLord subdomain
 
-6. **TerritoryLord is its own app.** Jon decided it should have its own
-   interface, not bolt onto ProspectLord. Sibling to ProspectLord and CELord.
-   Shares packages-in-waiting (`core/`, `signals/`) and the Supabase project.
+## Explicitly deferred (do not build now)
 
-7. **Monorepo migration first — deliberate trigger override.** The CELord
-   docs establish Stage 2 (monorepo restructure) as **trigger-based** — "when
-   single-repo shape starts hurting." Adding a third app does not automatically
-   trigger that. Jon is explicitly overriding the trigger because:
-   - No users yet → no migration risk
-   - Time available before user growth
-   - Wants the structure set up cleanly to take on multiple future apps
-   This is a deliberate override, not a contradiction. **Stage 2 happens before
-   TerritoryLord v1 starts.**
-
-## Implementation order
-
-Two distinct workstreams. Do them in order.
-
-### Workstream A: Stage 2 monorepo migration (do first)
-
-Per `docs/celord/BACKLOG.md` "Stage 2: Monorepo restructure + ProspectLord rename":
-
-- Restructure repo into pnpm-workspaces + Turborepo. Repo name stays `saleslord`.
-- Move ProspectLord code into `apps/prospectlord/`. Rename from SalesLord to
-  ProspectLord: package.json, user-facing strings, Vercel project name.
-- Move CELord code into `apps/celord/`.
-- Extract `core/` → `packages/core/`, `signals/` → `packages/signals/`,
-  `supabase/migrations/` → `packages/db/`.
-- Fix imports in both apps. Verify both build and deploy.
-- Split Vercel deployment into two apps. Each gets its own subdomain.
-
-Verify both apps still work end-to-end before starting Workstream B. ProspectLord
-v0.7.0 features and CELord v0 features should all still function — collectors,
-enrichment, status management, CRM import, the prospect flow.
-
-### Workstream B: TerritoryLord v1 (do after Workstream A)
-
-Lands in `apps/territorylord/` with shared code in `packages/core/` and
-`packages/signals/`.
-
-**Shared data model** (lands in `packages/db/`, consumed by all three apps):
-
-- `territories` table — `rep_id` → array/join of ISO 3166-2 region codes.
-- `icp_profiles` table — industries (NAICS top-level + sub-sector or freeform
-  tags), optional size hint. Owned by rep or team. Reusable across
-  TerritoryLord and ProspectLord.
-- The shared `organizations` table (already exists, owned originally by CELord)
-  is the canonical org record. TerritoryLord writes new orgs here when
-  candidates don't already exist; uses the same entity resolution path in
-  `packages/signals/persist.ts`.
-
-**TerritoryLord-specific tables** (prefix `territorylord_` per the convention
-in `docs/celord/CLAUDE.md`):
-
-- `territorylord_runs` — `id`, `rep_id`, `icp_profile_id`, `region_code`,
-  `status` (pending/running/complete/failed), `created_at`, `completed_at`,
-  `candidate_count`, `error`.
-- `territorylord_candidates` — `id`, `run_id`, `org_id` (FK to shared
-  `organizations`), `status` (new/accepted/rejected/promoted),
-  `reject_reason` (enum: wrong_industry/too_small/not_real/duplicate/other),
-  `notes`.
-
-**OpenCorporates collector** (lands in `packages/signals/collectors/`):
-
-- BYOK pattern — user's OpenCorporates key from `rep_profiles`, AES-256-GCM
-  encrypted. Mirror the existing Anthropic BYOK pattern.
-- Filters at collector level: active entities only, exclude entities <90 days
-  old, basic has-website check.
-- Returns `RawSignal[]` matching the existing collector interface so entity
-  resolution / org creation flows through the same `signals/persist.ts` path.
-
-**Industry classification helper** (lands in `packages/signals/`):
-
-- Single Haiku 4.5 call per candidate that lacks a clean industry code from
-  OpenCorporates. Classifies into NAICS top-level + sub-sector based on company
-  name + any available description text.
-- Cost target: $0.001–0.003 per candidate. Batch where possible.
-- Reusable by CELord enrichment if useful there too.
-
-**Run mechanism**:
-
-- One region per run in v1. Rep picks a region from their territory; new
-  `territorylord_runs` row created; OpenCorporates queried with region +
-  ICP industry filters; results paginated server-side; orgs resolved or
-  created via shared `signals/persist.ts`; industry classification fills
-  gaps; `territorylord_candidates` rows written linking run → org.
-- Vercel function timeout (300s on Pro) should be sufficient for one region.
-  If a region exceeds the timeout in practice, shift to a Vercel Cron pattern
-  that processes one chunk per tick.
-
-**UI** (lands in `apps/territorylord/app/`):
-
-- Territory definition page — multi-select chips of ISO regions; persists to
-  `territories` table.
-- ICP profile page — industries multi-select, optional size hint; persists
-  to `icp_profiles`.
-- New run page — pick region + ICP profile, kick off run.
-- Results table — list candidates with name, region, industry, source link.
-  Per-row actions: **Accept**, **Reject** (with reason picker), **Promote
-  to ProspectLord**. Reject log informs filter iteration.
-- Run history — list of runs with status and counts.
-
-**Cross-app handoff**:
-
-- "Promote to ProspectLord" creates a `prospects` row pointing to the same
-  shared `organizations` row, then deep-links into ProspectLord's add-prospect
-  flow with the org pre-filled.
-- Verify the exact deep-link contract by reading `apps/prospectlord/`'s
-  add-prospect route after monorepo migration completes.
-
-**Platform ribbon update**:
-
-- Add TerritoryLord tab to `components/PlatformRibbon.tsx` (or wherever it
-  lives post-monorepo). Three tabs: ProspectLord / TerritoryLord / CELord.
-
-## Explicitly deferred (do not build in v1)
-
-- Multi-state runs in a single job
-- Inngest or any proper job queue
-- Revenue band data at the candidate level
-- Employee count enrichment (add only if reject log shows size-based noise dominates)
-- Paid firmographic aggregator BYOK (Apollo, ZoomInfo, Clearbit, etc.)
-- Saved territory presets (likely lands in shared per-user settings post-Stage 3)
+- Multi-state runs in a single job (needs Inngest or similar)
+- Paid firmographic BYOK (Apollo, ZoomInfo) — only if free data proves too noisy
+- Employee count enrichment from paid sources
+- Revenue band data at candidate level
+- Saved territory presets
 - Watchlist / alert-on-new-org-in-territory
-- Outreach drafting (lives in ProspectLord)
-
-## Open questions for Jon to decide during implementation
-
-- **OpenCorporates BYOK key source.** OpenCorporates has a free tier; a key
-  raises rate limits. BYOK fits the existing pattern, but a single
-  platform-owned key may be simpler for v1. Code should ask before assuming.
-- **NAICS vs. freeform industry tags in `icp_profiles`.** Structured NAICS is
-  cleaner but harder for reps to think in. Freeform tags are easier but harder
-  to filter against OpenCorporates results. Pick one for v1; backlog the other.
-- **Auth model across three apps post-monorepo.** Almost certainly one Supabase
-  auth, three app surfaces. Confirm during Stage 2.
-- **Subdomain convention post-Stage 2.** ProspectLord, CELord, TerritoryLord
-  each get their own subdomain. Naming TBD.
-
-## Repo structure (target post-Stage 2)
-
-```
-saleslord/                  (monorepo root — same repo, restructured)
-├── apps/
-│   ├── prospectlord/       (renamed from SalesLord)
-│   ├── celord/
-│   └── territorylord/      (NEW)
-├── packages/
-│   ├── core/               (Organization, Location, enums, types — shared)
-│   ├── signals/            (collectors, enrichment, scoring, persist — shared)
-│   ├── db/                 (Supabase migrations + schema — shared)
-│   └── ui/                 (extracted at Stage 3, not before)
-├── docs/
-│   ├── prospectlord/
-│   ├── celord/
-│   └── territorylord/      (NEW — this doc + CLAUDE.md + BACKLOG.md)
-├── pnpm-workspace.yaml
-└── turbo.json
-```
+- Promote-to-ProspectLord deep-link QA (needs testing with a real promoted org)
+- Tooltip org counts (`getTooltipExtra` hook is stubbed, data not wired)
