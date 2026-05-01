@@ -1,80 +1,130 @@
 'use client'
 
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
+import { useMemo } from 'react'
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
+// ── Types ─────────────────────────────────────────────────────────
 
-// Full state name (as stored in us-atlas TopoJSON) → ISO 3166-2 code
-const STATE_NAME_TO_CODE: Record<string, string> = {
-  'Alabama': 'US-AL',         'Alaska': 'US-AK',         'Arizona': 'US-AZ',
-  'Arkansas': 'US-AR',        'California': 'US-CA',      'Colorado': 'US-CO',
-  'Connecticut': 'US-CT',     'Delaware': 'US-DE',        'Florida': 'US-FL',
-  'Georgia': 'US-GA',         'Hawaii': 'US-HI',          'Idaho': 'US-ID',
-  'Illinois': 'US-IL',        'Indiana': 'US-IN',         'Iowa': 'US-IA',
-  'Kansas': 'US-KS',          'Kentucky': 'US-KY',        'Louisiana': 'US-LA',
-  'Maine': 'US-ME',           'Maryland': 'US-MD',        'Massachusetts': 'US-MA',
-  'Michigan': 'US-MI',        'Minnesota': 'US-MN',       'Mississippi': 'US-MS',
-  'Missouri': 'US-MO',        'Montana': 'US-MT',         'Nebraska': 'US-NE',
-  'Nevada': 'US-NV',          'New Hampshire': 'US-NH',   'New Jersey': 'US-NJ',
-  'New Mexico': 'US-NM',      'New York': 'US-NY',        'North Carolina': 'US-NC',
-  'North Dakota': 'US-ND',    'Ohio': 'US-OH',            'Oklahoma': 'US-OK',
-  'Oregon': 'US-OR',          'Pennsylvania': 'US-PA',    'Rhode Island': 'US-RI',
-  'South Carolina': 'US-SC',  'South Dakota': 'US-SD',    'Tennessee': 'US-TN',
-  'Texas': 'US-TX',           'Utah': 'US-UT',            'Vermont': 'US-VT',
-  'Virginia': 'US-VA',        'Washington': 'US-WA',      'West Virginia': 'US-WV',
-  'Wisconsin': 'US-WI',       'Wyoming': 'US-WY',
-  'District of Columbia': 'US-DC',
+type ProjectionConfig = {
+  center?: [number, number]
+  scale?: number
+  rotate?: [number, number, number]
+  [key: string]: unknown
 }
 
-export default function TerritoryMap({
-  selected,
-  onToggle,
-}: {
+export type TerritoryMapProps = {
+  geoUrl: string
+  projection?: string
+  projectionConfig?: ProjectionConfig
+  /** Geographic [lon, lat] to centre on when nothing is selected */
+  defaultCenter: [number, number]
+  /** Map a feature's properties to an ISO 3166-2 region code, or null to skip */
+  getCode: (properties: Record<string, unknown>) => string | null
+  /** ISO 3166-2 code → approximate geographic centroid [lon, lat] */
+  centroids: Record<string, [number, number]>
   selected: Set<string>
   onToggle: (code: string) => void
-}) {
+}
+
+// ── View calculation ──────────────────────────────────────────────
+
+function computeView(
+  selected: Set<string>,
+  centroids: Record<string, [number, number]>,
+  defaultCenter: [number, number],
+): { center: [number, number]; zoom: number } {
+  const points = [...selected]
+    .map(code => centroids[code])
+    .filter((c): c is [number, number] => Boolean(c))
+
+  if (points.length === 0) return { center: defaultCenter, zoom: 1 }
+
+  const lons = points.map(p => p[0])
+  const lats = points.map(p => p[1])
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons)
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+
+  const center: [number, number] = [
+    (minLon + maxLon) / 2,
+    (minLat + maxLat) / 2,
+  ]
+
+  // Pad the spread so a single region doesn't over-zoom
+  const spread = Math.max((maxLon - minLon) / 1.5, maxLat - minLat, 4) + 10
+  const zoom = Math.max(1, Math.min(6, 50 / spread))
+
+  return { center, zoom }
+}
+
+// ── Component ─────────────────────────────────────────────────────
+
+export default function TerritoryMap({
+  geoUrl,
+  projection = 'geoMercator',
+  projectionConfig,
+  defaultCenter,
+  getCode,
+  centroids,
+  selected,
+  onToggle,
+}: TerritoryMapProps) {
+  const { center, zoom } = useMemo(
+    () => computeView(selected, centroids, defaultCenter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected, centroids, defaultCenter],
+  )
+
+  // Key the ZoomableGroup on rounded view values so it re-mounts (and
+  // re-centers) when the territory selection changes meaningfully, without
+  // micro-jitter on every pixel of the bounding-box.
+  const viewKey = `${center[0].toFixed(1)},${center[1].toFixed(1)},${zoom.toFixed(2)}`
+
   return (
     <ComposableMap
-      projection="geoAlbersUsa"
+      projection={projection}
+      projectionConfig={projectionConfig as Record<string, unknown>}
       style={{ width: '100%', height: 'auto' }}
     >
-      <Geographies geography={GEO_URL}>
-        {({ geographies }) =>
-          geographies.map(geo => {
-            const code = STATE_NAME_TO_CODE[geo.properties.name as string]
-            if (!code) return null
-            const isSelected = selected.has(code)
-            return (
-              <Geography
-                key={geo.rsmKey}
-                geography={geo}
-                title={geo.properties.name as string}
-                onClick={() => onToggle(code)}
-                style={{
-                  default: {
-                    fill:        isSelected ? '#111827' : '#e5e7eb',
-                    stroke:      '#ffffff',
-                    strokeWidth: 0.5,
-                    outline:     'none',
-                    cursor:      'pointer',
-                  },
-                  hover: {
-                    fill:        isSelected ? '#374151' : '#d1d5db',
-                    stroke:      '#ffffff',
-                    strokeWidth: 0.5,
-                    outline:     'none',
-                    cursor:      'pointer',
-                  },
-                  pressed: {
-                    fill:    isSelected ? '#1f2937' : '#9ca3af',
-                    outline: 'none',
-                  },
-                }}
-              />
-            )
-          })
-        }
-      </Geographies>
+      <ZoomableGroup key={viewKey} center={center} zoom={zoom}>
+        <Geographies geography={geoUrl}>
+          {({ geographies }) =>
+            geographies.map(geo => {
+              const props = geo.properties as Record<string, unknown>
+              const code = getCode(props)
+              if (!code) return null
+              const isSelected = selected.has(code)
+              return (
+                <Geography
+                  key={geo.rsmKey}
+                  geography={geo}
+                  title={String(props.name ?? '')}
+                  onClick={() => onToggle(code)}
+                  style={{
+                    default: {
+                      fill:        isSelected ? '#111827' : '#e5e7eb',
+                      stroke:      '#ffffff',
+                      strokeWidth: 0.5,
+                      outline:     'none',
+                      cursor:      'pointer',
+                    },
+                    hover: {
+                      fill:        isSelected ? '#374151' : '#d1d5db',
+                      stroke:      '#ffffff',
+                      strokeWidth: 0.5,
+                      outline:     'none',
+                      cursor:      'pointer',
+                    },
+                    pressed: {
+                      fill:    isSelected ? '#1f2937' : '#9ca3af',
+                      outline: 'none',
+                    },
+                  }}
+                />
+              )
+            })
+          }
+        </Geographies>
+      </ZoomableGroup>
     </ComposableMap>
   )
 }
