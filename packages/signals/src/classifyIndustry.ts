@@ -24,6 +24,7 @@ export const NAICS_SECTORS = [
   { code: '71', label: 'Arts, Entertainment, and Recreation' },
   { code: '72', label: 'Accommodation and Food Services' },
   { code: '81', label: 'Other Services' },
+  { code: '92', label: 'Public Administration' },
   { code: '99', label: 'Unknown / Other' },
 ] as const
 

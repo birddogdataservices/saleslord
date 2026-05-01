@@ -25,6 +25,7 @@
     "pdf-to-img": "^5.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-simple-maps": "^3.0.0",
     "shadcn": "^4.1.2",
     "sonner": "^2.0.7",
     "stripe": "^21.0.1",
