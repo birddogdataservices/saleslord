@@ -14,7 +14,7 @@ export default async function SetupPage() {
 
   const [{ data: profileRaw }, { data: products }, { data: teamConfigRaw }] = await Promise.all([
     supabase.from('rep_profiles').select('*').eq('user_id', user.id).single(),
-    supabase.from('products').select('*').order('created_at', { ascending: true }),
+    supabase.from('products').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
     supabase.from('team_config').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
@@ -42,6 +42,7 @@ export default async function SetupPage() {
           products={(products ?? []) as Product[]}
           hasApiKey={hasApiKey}
           teamConfig={(teamConfigRaw ?? null) as TeamConfig | null}
+          userId={user.id}
         />
       </div>
     </div>

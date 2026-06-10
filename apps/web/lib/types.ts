@@ -15,14 +15,15 @@ export type OrgCandidate = {
 // Database row types — keep in sync with supabase/schema.sql
 // ─────────────────────────────────────────
 
-// Shared product definition — lives in the `products` table, admin-managed
+// Product definition — lives in the `products` table, owned per-user.
+// Every user must have at least one before ProspectLord pages unlock.
 export type Product = {
   id: string           // DB-generated UUID
+  user_id: string      // owner — RLS scopes all reads/writes to this user
   name: string
   description: string
   value_props: string
   competitors: string
-  created_by: string   // user_id of the admin who created it
   created_at: string
 }
 

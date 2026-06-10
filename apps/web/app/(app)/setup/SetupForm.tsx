@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
+import ProductsManager from './ProductsManager'
 import type { RepProfile, Product, TeamConfig } from '@/lib/types'
 
 // ── Targeting presets ─────────────────────────────────────────────────────────
@@ -24,6 +24,7 @@ type Props = {
   products: Product[]
   hasApiKey: boolean
   teamConfig: TeamConfig | null
+  userId: string
 }
 
 function voiceStatus(samples: string) {
@@ -31,7 +32,7 @@ function voiceStatus(samples: string) {
   return 'calibrated'
 }
 
-export default function SetupForm({ profile, products, hasApiKey, teamConfig }: Props) {
+export default function SetupForm({ profile, products, hasApiKey, teamConfig, userId }: Props) {
   const supabase = createClient()
 
   const [repBackground, setBackground] = useState(profile?.rep_background ?? '')
@@ -125,7 +126,30 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig }: 
   }
 
   return (
-    <form onSubmit={save} className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8">
+
+      {/* ── Products — mandatory, per-user ── */}
+      <div className="flex flex-col gap-3">
+        {products.length === 0 && (
+          <div
+            className="rounded-[10px] px-5 py-4 text-[12px] leading-relaxed"
+            style={{ background: 'var(--sl-amber-bg)', color: 'var(--sl-amber-t)', border: '1px solid var(--sl-amber-t)' }}
+          >
+            <span className="font-semibold">Create your first product to get started.</span>{' '}
+            Briefs, email drafts, and research are all generated against your product context —
+            ProspectLord unlocks once you've added at least one.
+          </div>
+        )}
+        <Section
+          title="Your products"
+          hint="What you sell. All of your products are injected into every research and email call. Yours alone — update them any time, including when you change companies."
+          required
+        >
+          <ProductsManager initialProducts={products} userId={userId} />
+        </Section>
+      </div>
+
+      <form onSubmit={save} className="flex flex-col gap-8">
 
       {/* Voice calibration badge */}
       <div>
@@ -333,70 +357,6 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig }: 
         </div>
       </Section>
 
-      {/* ── 6. Products (read-only — managed by admin) ── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-[13px] font-semibold" style={{ color: 'var(--sl-text)' }}>Products</h2>
-            <p className="text-[11px] mt-0.5" style={{ color: 'var(--sl-text3)' }}>
-              All products are used in every research call. Managed by your admin.
-            </p>
-          </div>
-          {profile?.is_admin && (
-            <Link
-              href="/admin/products"
-              className="text-[11px] px-3 py-1.5 rounded-[6px] font-medium"
-              style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
-            >
-              Manage products →
-            </Link>
-          )}
-        </div>
-
-        {products.length === 0 ? (
-          <div
-            className="rounded-[10px] px-5 py-4 text-[12px]"
-            style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)', color: 'var(--sl-text3)' }}
-          >
-            No products configured yet.{' '}
-            {profile?.is_admin
-              ? <Link href="/admin/products" style={{ color: 'var(--sl-text2)' }}>Add one →</Link>
-              : 'Ask your admin to add products before running research.'}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {products.map(product => (
-              <div
-                key={product.id}
-                className="rounded-[10px] px-5 py-4 flex flex-col gap-1"
-                style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)' }}
-              >
-                <div className="text-[12px] font-semibold" style={{ color: 'var(--sl-text)' }}>
-                  {product.name}
-                </div>
-                {product.description && (
-                  <div className="text-[11px] leading-relaxed" style={{ color: 'var(--sl-text3)' }}>
-                    {product.description}
-                  </div>
-                )}
-                <div className="flex gap-4 mt-1">
-                  {product.value_props && (
-                    <div className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
-                      <span style={{ color: 'var(--sl-text2)' }}>Value props:</span> {product.value_props}
-                    </div>
-                  )}
-                  {product.competitors && (
-                    <div className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
-                      <span style={{ color: 'var(--sl-text2)' }}>Competes with:</span> {product.competitors}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Save */}
       <div className="flex items-center justify-between pt-2 pb-8">
         <p className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
@@ -411,7 +371,8 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig }: 
           {saving ? 'Saving…' : 'Save profile'}
         </button>
       </div>
-    </form>
+      </form>
+    </div>
   )
 }
 

@@ -41,6 +41,7 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false }).limit(1).single(),
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     adminClient.from('products').select('id, name, description, value_props, competitors')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: true }),
     // Most recent update blurb — used to freshen the email context if available
     adminClient.from('prospect_updates').select('summary, news_items, created_at')

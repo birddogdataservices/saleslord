@@ -171,40 +171,21 @@ create policy "Users view own usage"
 -- Inserts happen only via service role key in API routes — no client insert policy
 
 -- ─────────────────────────────────────────
--- Shared products (admin-managed, all reps read)
+-- Products (per-user — each rep manages their own)
+-- Every user must create at least one product before ProspectLord pages unlock.
 -- ─────────────────────────────────────────
 create table products (
   id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users not null,
   name        text not null,
   description text default '',
   value_props text default '',
   competitors text default '',
-  created_by  uuid references auth.users not null,
   created_at  timestamptz default now()
 );
 alter table products enable row level security;
-
--- All authenticated users can read
-create policy "All users read products"
-  on products for select
-  using (auth.uid() is not null);
-
--- Only admins can write (is_admin checked on rep_profiles)
-create policy "Admins insert products"
-  on products for insert
-  with check (
-    exists (select 1 from rep_profiles where user_id = auth.uid() and is_admin = true)
-  );
-create policy "Admins update products"
-  on products for update
-  using (
-    exists (select 1 from rep_profiles where user_id = auth.uid() and is_admin = true)
-  );
-create policy "Admins delete products"
-  on products for delete
-  using (
-    exists (select 1 from rep_profiles where user_id = auth.uid() and is_admin = true)
-  );
+create policy "Users manage own products"
+  on products for all using (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────
 -- Prospect updates (check-for-updates blurb history)
@@ -285,7 +266,7 @@ create policy "Authenticated users can read team config"
 -- ─────────────────────────────────────────
 -- Indexes
 -- ─────────────────────────────────────────
-create index on products           (created_at asc);
+create index on products           (user_id, created_at asc);
 create index on prospects          (user_id, created_at desc);
 create index on prospect_notes     (prospect_id, created_at desc);
 create index on follow_ups         (prospect_id, touch_num asc);

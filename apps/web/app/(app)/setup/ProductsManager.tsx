@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import type { Product } from '@/lib/types'
 
-type ProductDraft = Omit<Product, 'id' | 'created_by' | 'created_at'>
+type ProductDraft = Omit<Product, 'id' | 'user_id' | 'created_at'>
 
 const EMPTY_DRAFT: ProductDraft = { name: '', description: '', value_props: '', competitors: '' }
 
@@ -15,13 +16,14 @@ type Props = {
   userId: string
 }
 
-export default function AdminProductsClient({ initialProducts, userId }: Props) {
+export default function ProductsManager({ initialProducts, userId }: Props) {
   const supabase = createClient()
+  const router = useRouter()
 
   const [products, setProducts]     = useState<Product[]>(initialProducts)
   const [editingId, setEditingId]   = useState<string | null>(null)
   const [editDraft, setEditDraft]   = useState<ProductDraft>(EMPTY_DRAFT)
-  const [showAdd, setShowAdd]       = useState(false)
+  const [showAdd, setShowAdd]       = useState(initialProducts.length === 0)
   const [addDraft, setAddDraft]     = useState<ProductDraft>(EMPTY_DRAFT)
   const [saving, setSaving]         = useState(false)
   const [deleting, setDeleting]     = useState<string | null>(null)
@@ -33,19 +35,21 @@ export default function AdminProductsClient({ initialProducts, userId }: Props) 
 
     const { data, error } = await supabase
       .from('products')
-      .insert({ ...addDraft, created_by: userId })
+      .insert({ ...addDraft, user_id: userId })
       .select()
       .single()
 
     setSaving(false)
     if (error || !data) {
-      toast.error('Failed to add product. Make sure your account has admin access.')
+      toast.error('Failed to add product.')
       return
     }
     setProducts(prev => [...prev, data as Product])
     setAddDraft(EMPTY_DRAFT)
     setShowAdd(false)
     toast.success('Product added.')
+    // First product unlocks the gated ProspectLord routes — refresh server state
+    router.refresh()
   }
 
   // ── Edit ─────────────────────────────────────────────────────────
@@ -70,7 +74,7 @@ export default function AdminProductsClient({ initialProducts, userId }: Props) 
 
     setSaving(false)
     if (error) {
-      toast.error('Failed to save. Make sure your account has admin access.')
+      toast.error('Failed to save product.')
       return
     }
     setProducts(prev => prev.map(p => p.id === id ? { ...p, ...editDraft } : p))
@@ -90,15 +94,16 @@ export default function AdminProductsClient({ initialProducts, userId }: Props) 
 
     setDeleting(null)
     if (error) {
-      toast.error('Failed to delete. Make sure your account has admin access.')
+      toast.error('Failed to delete product.')
       return
     }
     setProducts(prev => prev.filter(p => p.id !== id))
     toast.success('Product deleted.')
+    router.refresh()
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
 
       {/* Product list */}
       {products.map(product => (
@@ -197,14 +202,16 @@ export default function AdminProductsClient({ initialProducts, userId }: Props) 
             <span className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sl-text3)' }}>
               New product
             </span>
-            <button
-              type="button"
-              onClick={() => { setShowAdd(false); setAddDraft(EMPTY_DRAFT) }}
-              className="text-[11px] cursor-pointer hover:opacity-70"
-              style={{ color: 'var(--sl-text3)' }}
-            >
-              Cancel
-            </button>
+            {products.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setShowAdd(false); setAddDraft(EMPTY_DRAFT) }}
+                className="text-[11px] cursor-pointer hover:opacity-70"
+                style={{ color: 'var(--sl-text3)' }}
+              >
+                Cancel
+              </button>
+            )}
           </div>
           <ProductFields draft={addDraft} onChange={setAddDraft} />
           <div className="flex justify-end">
@@ -235,12 +242,6 @@ export default function AdminProductsClient({ initialProducts, userId }: Props) 
         >
           + Add product
         </button>
-      )}
-
-      {products.length === 0 && !showAdd && (
-        <p className="text-[11px] text-center py-2" style={{ color: 'var(--sl-text3)' }}>
-          No products yet. Add one above — reps won't be able to run research without at least one.
-        </p>
       )}
     </div>
   )
