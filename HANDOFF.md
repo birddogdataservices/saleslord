@@ -31,15 +31,24 @@ filter to it, and improve the results table (sort, filter by status, bulk action
 
 **Data source:** Wikidata SPARQL (free, no key)
 
-## ProspectLord status: v0.8.0 — Org disambiguation + cost transparency
+## ProspectLord status: v0.9.0 — Per-user products + mandatory product gate
 
 See [`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md).
 
-**Shipped this session:**
+**Shipped this session (v0.9.0):**
+- Products moved from shared admin-managed table to per-user ownership —
+  migration run in prod Supabase; `/admin/products` removed; product CRUD
+  now lives on `/setup` for every user
+- Mandatory product gate — `(app)/(gated)/` route group redirects to `/setup`
+  until the user creates their first product
+- Platform is ready for beta testers selling different products
+
+**Previous session (v0.8.0):**
 - Org disambiguation flow — resolve route (Haiku), territory tiebreaker, confirmation dialog
 - Cost transparency design principle — `lib/costs.ts`, cost hint in dialog footer
 
 **Pending (not urgent):**
+- Beta tester feedback — first external user onboarding via the new product gate
 - Case Study Matcher seeding — code complete, waiting on Pentaho PDF from Jon
 - `/api/cron/refresh-all` — weekly refresh + Resend digest
 
