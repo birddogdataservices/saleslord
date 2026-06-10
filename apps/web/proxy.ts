@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { GATED_MODULES } from '@/lib/modules'
 
 // Routes that don't require authentication
 const PUBLIC_PATHS = ['/login', '/auth/callback', '/access-denied']
@@ -79,6 +80,46 @@ export async function proxy(request: NextRequest) {
       const deniedUrl = request.nextUrl.clone()
       deniedUrl.pathname = '/access-denied'
       return NextResponse.redirect(deniedUrl)
+    }
+  }
+
+  // ── Per-user module gate ────────────────────────────────────────
+  // Gated modules (CELord, TerritoryLord, future) are hidden per user.
+  // No module_access row = no access. Admins always pass. Cron routes
+  // never reach here (CRON_PATHS returns above).
+  const gatedModule = GATED_MODULES.find(m =>
+    m.pathPrefixes.some(p => pathname.startsWith(p))
+  )
+
+  if (gatedModule) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
+    const restHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+
+    const grantRes = await fetch(
+      `${supabaseUrl}/rest/v1/module_access?email=eq.${encodeURIComponent(email.toLowerCase())}&module=eq.${gatedModule.slug}&select=id`,
+      { headers: restHeaders }
+    )
+    const grants: { id: string }[] = await grantRes.json()
+
+    let allowed = grants?.length > 0
+
+    if (!allowed) {
+      const adminRes = await fetch(
+        `${supabaseUrl}/rest/v1/rep_profiles?user_id=eq.${user.id}&select=is_admin`,
+        { headers: restHeaders }
+      )
+      const profiles: { is_admin: boolean }[] = await adminRes.json()
+      allowed = profiles?.[0]?.is_admin === true
+    }
+
+    if (!allowed) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const homeUrl = request.nextUrl.clone()
+      homeUrl.pathname = '/'
+      return NextResponse.redirect(homeUrl)
     }
   }
 

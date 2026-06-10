@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { GATED_MODULES } from '@/lib/modules'
 
 type AllowedEmail = {
   id: string
@@ -24,7 +25,13 @@ type User = {
   email: string
 }
 
-type Tab = 'allowlist' | 'prospects'
+type ModuleUser = {
+  email: string
+  is_admin: boolean
+  signed_up: boolean
+}
+
+type Tab = 'allowlist' | 'modules' | 'prospects'
 
 export default function AdminUsersClient() {
   const [tab, setTab] = useState<Tab>('allowlist')
@@ -35,6 +42,12 @@ export default function AdminUsersClient() {
   const [adding,   setAdding]   = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newNote,  setNewNote]  = useState('')
+
+  // Module access state
+  const [moduleUsers,    setModuleUsers]    = useState<ModuleUser[]>([])
+  const [grants,         setGrants]         = useState<Set<string>>(new Set()) // "email:module"
+  const [modulesLoading, setModulesLoading] = useState(false)
+  const [modulesLoaded,  setModulesLoaded]  = useState(false)
 
   // Prospects state
   const [prospects,     setProspects]     = useState<AdminProspect[]>([])
@@ -66,8 +79,48 @@ export default function AdminUsersClient() {
       .finally(() => setProspectsLoading(false))
   }
 
+  function loadModules() {
+    if (modulesLoading || modulesLoaded) return
+    setModulesLoading(true)
+    fetch('/api/admin/module-access')
+      .then(r => r.json())
+      .then(d => {
+        setModuleUsers(d.users ?? [])
+        setGrants(new Set((d.grants ?? []).map((g: { email: string; module: string }) => `${g.email}:${g.module}`)))
+        setModulesLoaded(true)
+      })
+      .catch(() => toast.error('Failed to load module access.'))
+      .finally(() => setModulesLoading(false))
+  }
+
+  async function toggleModule(email: string, module: string, granted: boolean) {
+    const key = `${email}:${module}`
+    // Optimistic update; revert on failure
+    setGrants(prev => {
+      const next = new Set(prev)
+      granted ? next.add(key) : next.delete(key)
+      return next
+    })
+
+    const res = await fetch('/api/admin/module-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, module, granted }),
+    })
+
+    if (!res.ok) {
+      setGrants(prev => {
+        const next = new Set(prev)
+        granted ? next.delete(key) : next.add(key)
+        return next
+      })
+      toast.error('Failed to update module access.')
+    }
+  }
+
   function switchTab(t: Tab) {
     setTab(t)
+    if (t === 'modules') loadModules()
     if (t === 'prospects') loadProspects()
   }
 
@@ -154,6 +207,7 @@ export default function AdminUsersClient() {
       {/* Tab switcher */}
       <div className="flex gap-2">
         <button style={tabStyle('allowlist')} onClick={() => switchTab('allowlist')}>Allowlist</button>
+        <button style={tabStyle('modules')}   onClick={() => switchTab('modules')}>Modules</button>
         <button style={tabStyle('prospects')} onClick={() => switchTab('prospects')}>Prospects</button>
       </div>
 
@@ -241,6 +295,65 @@ export default function AdminUsersClient() {
             )}
           </div>
         </>
+      )}
+
+      {/* ── MODULES TAB ── */}
+      {tab === 'modules' && (
+        <div className="flex flex-col gap-4">
+          <p className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
+            ProspectLord is always visible. Toggle which other modules each person can see and use.
+            Admins always have access to everything.
+          </p>
+
+          {modulesLoading ? (
+            <div className="text-[12px] py-4" style={{ color: 'var(--sl-text3)' }}>Loading…</div>
+          ) : moduleUsers.length === 0 ? (
+            <div
+              className="rounded-[10px] px-5 py-4 text-[12px]"
+              style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)', color: 'var(--sl-text3)' }}
+            >
+              No users yet.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {/* Header row */}
+              <div className="flex items-center px-4 py-1">
+                <span className="flex-1 text-[10px] uppercase tracking-wide" style={{ color: 'var(--sl-text3)' }}>User</span>
+                {GATED_MODULES.map(m => (
+                  <span key={m.slug} className="w-28 text-center text-[10px] uppercase tracking-wide" style={{ color: 'var(--sl-text3)' }}>
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+
+              {moduleUsers.map(u => (
+                <div
+                  key={u.email}
+                  className="flex items-center rounded-[8px] px-4 py-3"
+                  style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)' }}
+                >
+                  <div className="flex-1 flex flex-col gap-0.5">
+                    <span className="text-[12px]" style={{ color: 'var(--sl-text)' }}>{u.email}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--sl-text3)' }}>
+                      {u.is_admin ? 'Admin — all modules' : u.signed_up ? '' : 'Invited — not signed in yet'}
+                    </span>
+                  </div>
+                  {GATED_MODULES.map(m => (
+                    <div key={m.slug} className="w-28 flex justify-center">
+                      <input
+                        type="checkbox"
+                        checked={u.is_admin || grants.has(`${u.email}:${m.slug}`)}
+                        disabled={u.is_admin}
+                        onChange={e => toggleModule(u.email, m.slug, e.target.checked)}
+                        className="cursor-pointer disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── PROSPECTS TAB ── */}
