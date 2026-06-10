@@ -21,6 +21,48 @@ saleslord/
 - Output: `apps/web/.next`
 - `next` listed in root `package.json` devDependencies — required for Vercel framework detection
 
+## ProspectLord: job history sidebar (this session)
+
+The sidebar now shows AI jobs (research, email drafts, update checks, case
+study matches) — running jobs with live elapsed time, finished jobs with
+success/fail, runtime, and API cost. Last 24h of history, running jobs pinned
+on top, rows link to the prospect.
+
+- `jobs` table — written by `withJob` in `apps/web/lib/jobs.ts`, which wraps
+  each AI route's handler (row inserted as `running`, finalized from the
+  route's Response; validation failures like rate limits are deleted, not
+  shown as failures).
+- `GET /api/jobs` — polled by `components/prospect/JobsSection.tsx` (5s while
+  running, 20s idle); sweeps `running` rows older than 10 min to `failed`.
+- **Migration to run in prod Supabase:** `packages/db/migrations/2026-06-10_jobs.sql`
+
+## ProspectLord: security + cost-accounting fixes (this session)
+
+- **Ownership checks (IDOR)** — `refresh-email`, `check-updates`, and
+  `case-studies/match` fetched prospects by id with the admin client without
+  verifying the caller owned them. All three now return 404 on mismatch.
+  (`archive` and PDF export were already safe — user_id check / RLS client.)
+- **Web search loop + token accounting** — research and check-updates had a
+  `stop_reason === 'tool_use'` loop that never fired (`web_search_20250305` is
+  a server-side tool; the continuation signal is `pause_turn`) and counted only
+  the final call's tokens. Now: canonical `pause_turn` continuation (append
+  assistant content, re-send) and usage accumulated across every call, so
+  `api_usage.cost_usd` no longer undercounts multi-continuation runs.
+
+## Platform: per-user module visibility (this session)
+
+Admins can hide CELord / TerritoryLord (and future modules) per user from
+`/admin/users` → Modules tab. ProspectLord is always visible; admins always
+see everything. Enforcement is in `proxy.ts` (pages redirect to `/`, API
+routes get 403) — hiding the ribbon tab is display-only. Grants live in the
+`module_access` table, keyed by email like `allowed_emails`, so access can be
+granted before first sign-in. **Default: new users see ProspectLord only.**
+
+- Module registry: `apps/web/lib/modules.ts` — single source of truth for
+  ribbon, proxy gate, and admin UI. A future module is one entry here.
+- **Migration to run in prod Supabase:** `packages/db/migrations/2026-06-10_module_access.sql`
+  (includes a commented seed block to preserve existing users' all-tab access).
+
 ## TerritoryLord: next session — candidate filtering
 
 See [`docs/territorylord/HANDOFF.md`](docs/territorylord/HANDOFF.md) for full detail.
