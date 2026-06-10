@@ -42,6 +42,28 @@ alter table allowed_emails enable row level security;
 -- No select policy = no client access
 
 -- ─────────────────────────────────────────
+-- Access control — per-user module visibility
+-- ─────────────────────────────────────────
+-- One row grants one user (by email) one gated module (celord, territorylord,
+-- future slugs). No row = module hidden. ProspectLord is never gated; admins
+-- (rep_profiles.is_admin) always see everything. Keyed by email — like
+-- allowed_emails — so grants can be created before the user's first sign-in.
+create table module_access (
+  id         uuid primary key default gen_random_uuid(),
+  email      text not null,
+  module     text not null,
+  granted_by uuid references auth.users,
+  created_at timestamptz default now(),
+  unique (email, module)
+);
+alter table module_access enable row level security;
+-- Users may read their own grants (ribbon rendering). All writes go through
+-- admin API routes with the service role key — no client write policy.
+create policy "Users read own module grants"
+  on module_access for select
+  using (lower(email) = lower(auth.email()));
+
+-- ─────────────────────────────────────────
 -- Prospects
 -- ─────────────────────────────────────────
 create table prospects (
@@ -169,6 +191,32 @@ alter table api_usage enable row level security;
 create policy "Users view own usage"
   on api_usage for select using (auth.uid() = user_id);
 -- Inserts happen only via service role key in API routes — no client insert policy
+
+-- ─────────────────────────────────────────
+-- Jobs — AI job history (sidebar Jobs section)
+-- ─────────────────────────────────────────
+-- One row per AI action (research, email draft, update check, case study
+-- match). Inserted as 'running' when the route starts the AI work, finalized
+-- with status/cost/finished_at when it returns. company_name is denormalized
+-- so history survives prospect deletion.
+create table jobs (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid references auth.users not null,
+  prospect_id  uuid references prospects on delete set null,
+  company_name text not null,
+  kind         text not null,              -- research | email_draft | check_updates | case_study_match
+  status       text not null default 'running',  -- running | success | failed
+  error        text,
+  cost_usd     numeric,
+  started_at   timestamptz default now(),
+  finished_at  timestamptz
+);
+alter table jobs enable row level security;
+-- Users read their own job history (sidebar polling). All writes go through
+-- API routes with the service role key — no client write policy.
+create policy "Users read own jobs"
+  on jobs for select using (auth.uid() = user_id);
+create index jobs_user_started_idx on jobs (user_id, started_at desc);
 
 -- ─────────────────────────────────────────
 -- Products (per-user — each rep manages their own)

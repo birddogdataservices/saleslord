@@ -213,3 +213,21 @@ export type ProspectSidebarItem = Pick<Prospect, 'id' | 'name' | 'last_refreshed
   fy_end: string | null
   archived_at: string | null
 }
+
+// ─────────────────────────────────────────
+// Jobs — AI job history (sidebar Jobs section)
+// ─────────────────────────────────────────
+
+export type JobKind = 'research' | 'email_draft' | 'check_updates' | 'case_study_match'
+
+export type Job = {
+  id: string
+  prospect_id: string | null
+  company_name: string
+  kind: JobKind
+  status: 'running' | 'success' | 'failed'
+  error: string | null
+  cost_usd: number | null
+  started_at: string
+  finished_at: string | null
+}

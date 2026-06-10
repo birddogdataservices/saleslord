@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { decryptApiKey } from '@/lib/crypto'
+import { withJob } from '@/lib/jobs'
 import type { ProductPromptContext } from '@/lib/types'
 
 // Haiku is sufficient for email drafting — the context is already structured,
@@ -16,7 +17,16 @@ import type { ProductPromptContext } from '@/lib/types'
 // Email refresh is excluded from the daily call limit (it doesn't count against research budget).
 const MODEL = 'claude-haiku-3-5'
 
+// Job-tracked: withJob records this run in the jobs table (sidebar Jobs section).
 export async function POST(request: Request) {
+  return withJob(request, run, {
+    kind: 'email_draft',
+    adminClient: createAdminClient(),
+    getContext: body => ({ prospectId: body?.prospect_id ?? null }),
+  })
+}
+
+async function run(request: Request): Promise<Response> {
   // 1. Auth
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -49,7 +59,11 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  if (!prospectRes.data) return Response.json({ error: 'Prospect not found' }, { status: 404 })
+  // Ownership check — adminClient bypasses RLS, so verify the prospect belongs
+  // to the caller. 404 (not 403) to avoid confirming the id exists.
+  if (!prospectRes.data || prospectRes.data.user_id !== user.id) {
+    return Response.json({ error: 'Prospect not found' }, { status: 404 })
+  }
   if (!briefRes.data)    return Response.json({ error: 'No brief found — run research first' }, { status: 404 })
 
   const prospect    = prospectRes.data

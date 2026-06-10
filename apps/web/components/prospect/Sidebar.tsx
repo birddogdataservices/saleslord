@@ -6,6 +6,7 @@ import { useRef, useState, useCallback } from 'react'
 import type { ProspectSidebarItem } from '@/lib/types'
 import { windowStatusColor } from '@/lib/utils'
 import AddProspectInput from './AddProspectInput'
+import JobsSection from './JobsSection'
 
 type Props = {
   prospects: ProspectSidebarItem[]
@@ -131,8 +132,14 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
         </div>
       )}
 
+      {/* Jobs — running AI actions + last 24h history. mt-auto pins it (and
+          the footer below) to the bottom; renders nothing when there are no jobs. */}
+      <div className="mt-auto pb-[6px]">
+        <JobsSection />
+      </div>
+
       {/* Footer — cost badge + settings link */}
-      <div className="mt-auto px-[14px] py-[12px]" style={{ borderTop: '1px solid #2a2a2c' }}>
+      <div className="px-[14px] py-[12px]" style={{ borderTop: '1px solid #2a2a2c' }}>
         <div className="text-[10px] mb-[8px]" style={{ color: '#484844' }}>
           This month:{' '}
           <span style={{ color: '#b8b6b0' }}>

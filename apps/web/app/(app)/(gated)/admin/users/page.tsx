@@ -28,8 +28,9 @@ export default async function AdminUsersPage() {
             Team access
           </h1>
           <p className="text-[12px] mt-1" style={{ color: 'var(--sl-text2)' }}>
-            Pre-authorize teammates by email. They can sign in with Google or via magic link.
-            Each person uses their own Anthropic API key — add it in their Profile &amp; Settings.
+            Pre-authorize teammates by email and control which modules they can see.
+            They can sign in with Google or via magic link. Each person uses their own
+            Anthropic API key — add it in their Profile &amp; Settings.
           </p>
         </div>
 

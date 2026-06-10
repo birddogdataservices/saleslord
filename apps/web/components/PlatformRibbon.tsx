@@ -2,18 +2,25 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { MODULES, type ModuleSlug } from '@/lib/modules'
 
-export function PlatformRibbon() {
+// Tabs are filtered server-side: the root layout passes the modules the
+// current user can access (see lib/module-access.ts). Route enforcement
+// lives in proxy.ts — hiding a tab here is display-only.
+export function PlatformRibbon({ modules }: { modules: ModuleSlug[] }) {
   const pathname = usePathname()
-  const isCelord      = pathname.startsWith('/celord')
-  const isTerritory   = pathname.startsWith('/territorylord')
-  const isProspect    = !isCelord && !isTerritory
+
+  const activeSlug: ModuleSlug =
+    MODULES.find(m => m.pathPrefixes.some(p => pathname.startsWith(p)))?.slug
+    ?? 'prospectlord'
+
+  const visible = MODULES.filter(m => modules.includes(m.slug))
 
   return (
     <div className="h-9 shrink-0 bg-[#18181A] border-b border-[var(--sl-border)] flex items-center px-3 gap-1">
-      <RibbonTab href="/territorylord/runs" active={isTerritory} label="TerritoryLord" />
-      <RibbonTab href="/"                   active={isProspect}  label="ProspectLord" />
-      <RibbonTab href="/celord/prospects"   active={isCelord}    label="CELord" />
+      {visible.map(m => (
+        <RibbonTab key={m.slug} href={m.href} active={activeSlug === m.slug} label={m.label} />
+      ))}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { decryptApiKey } from '@/lib/crypto'
+import { withJob } from '@/lib/jobs'
 import type { DmRole, CompanyStats, ProductPromptContext } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -131,7 +132,18 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
 // ─────────────────────────────────────────
 // Route handler
 // ─────────────────────────────────────────
+// Job-tracked: withJob records this run in the jobs table (sidebar Jobs
+// section). The company name starts as the raw query and is updated to the
+// canonical name from the response when research succeeds.
 export async function POST(request: Request) {
+  return withJob(request, run, {
+    kind: 'research',
+    adminClient: createAdminClient(),
+    getContext: body => ({ companyName: body?.query ?? null }),
+  })
+}
+
+async function run(request: Request): Promise<Response> {
   // 1. Auth
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -217,25 +229,19 @@ export async function POST(request: Request) {
     tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
     messages,
   })
+  let totalInputTokens  = response.usage.input_tokens
+  let totalOutputTokens = response.usage.output_tokens
 
-  // Agentic loop — handle multiple web search tool calls
-  // Cap at 7 iterations to stay well under Vercel's 300s function timeout.
-  // The model typically needs 4–6 searches for a thorough brief.
-  const MAX_SEARCH_ITERATIONS = 6
-  let iterations = 0
-  while (response.stop_reason === 'tool_use' && iterations < MAX_SEARCH_ITERATIONS) {
-    iterations++
+  // web_search is a SERVER-side tool — searches execute inside a single API
+  // call, so stop_reason is never 'tool_use'. When the server-side loop hits
+  // its iteration limit the response comes back with stop_reason 'pause_turn';
+  // continue by appending the assistant content and re-sending (no tool_results,
+  // no extra user message). Cap continuations to stay under Vercel's 300s timeout.
+  const MAX_CONTINUATIONS = 6
+  let continuations = 0
+  while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+    continuations++
     messages.push({ role: 'assistant', content: response.content })
-
-    const toolResults = response.content
-      .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-      .map(b => ({
-        type: 'tool_result' as const,
-        tool_use_id: b.id,
-        content: (b as any).output ?? '',
-      }))
-
-    messages.push({ role: 'user', content: toolResults })
 
     response = await client.messages.create({
       model: MODEL,
@@ -244,6 +250,8 @@ export async function POST(request: Request) {
       tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
       messages,
     })
+    totalInputTokens  += response.usage.input_tokens
+    totalOutputTokens += response.usage.output_tokens
   }
 
   // 6. Extract and parse JSON.
@@ -251,8 +259,6 @@ export async function POST(request: Request) {
   // narrates its findings before outputting), nudge it with one tool-free follow-up
   // so it can only output the JSON object and nothing else.
   let textBlock = response.content.find(b => b.type === 'text')
-  let totalInputTokens  = response.usage.input_tokens
-  let totalOutputTokens = response.usage.output_tokens
 
   if (!textBlock || !textBlock.text.includes('{')) {
     messages.push({ role: 'assistant', content: response.content })
