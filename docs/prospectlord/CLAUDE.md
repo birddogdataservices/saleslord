@@ -34,7 +34,8 @@ controls entirely.
 │   │   ├── client.ts           # Browser Supabase client (anon key)
 │   │   ├── server.ts           # Server Supabase client (anon key + cookies)
 │   │   └── admin.ts            # Service role client — API routes ONLY
-│   ├── types.ts                # All DB row types + composite view types
+│   ├── types.ts                # All DB row types + composite view types; includes OrgCandidate
+│   ├── costs.ts                # COST_HINTS — plain-language cost ranges per BYOK endpoint
 │   ├── slop.ts                 # SLOP_PHRASES list + detectSlop()
 │   ├── crypto.ts               # encryptApiKey / decryptApiKey — AES-256-GCM
 │   └── utils.ts                # cn(), calculateCost(), ROLE_COLORS, windowStatusColor()
@@ -57,7 +58,8 @@ controls entirely.
 │   ├── ui/                     # shadcn components
 │   └── prospect/
 │       ├── Sidebar.tsx         # Dark sidebar, grouped by window status
-│       ├── AddProspectInput.tsx # Inline research trigger in sidebar
+│       ├── AddProspectInput.tsx # Inline research trigger — calls /api/resolve first, then /api/research
+│       ├── OrgDisambiguationDialog.tsx # Confirmation dialog before research fires; shows cost hint
 │       ├── TimingBar.tsx       # FY timing bar (always first in content)
 │       ├── StatCards.tsx       # Revenue / headcount / open roles / stage
 │       ├── NewsCard.tsx        # Paginated news (3/page, client component)
@@ -67,6 +69,7 @@ controls entirely.
 │       ├── CaseStudySection.tsx     # Match trigger, ranked cards, export — in right column
 │       └── CaseStudySlideModal.tsx  # Slide image preview modal
 └── app/api/
+    ├── resolve/route.ts        # POST — Haiku org identification; territory boost; confidence sort ✅
     ├── research/route.ts       # POST — full prospect research ✅
     ├── refresh-email/route.ts  # POST — regenerate email draft only ✅
     ├── profile/
@@ -160,8 +163,11 @@ RLS: all authenticated users can read; no client writes — admin routes use ser
 ### GET + PUT /api/admin/team-config ✅ built
 Singleton targeting config. GET: any authenticated user (used by setup page). PUT: admin-only upsert; validates arrays; fetches existing row id to upsert by pk. No Anthropic call.
 
+### POST /api/resolve ✅ built
+Org disambiguation — called before research. Haiku (not Sonnet). Returns up to 4 `OrgCandidate` objects with confidence scores. Applies territory boost (+0.15) to candidates whose `hq_region` is in the rep's `territories` rows; sorts descending by boosted confidence. Not rate-limited; not logged to `api_usage`. On any error, `AddProspectInput` falls through to `/api/research` directly.
+
 ### POST /api/research ✅ built
-Full prospect research. Anthropic web search tool with agentic loop. Writes to prospects, prospect_briefs, decision_makers (including targeting_tier + tier_reasoning). Fetches team_config and injects seniority_bands + target_functions into system prompt. Logs to api_usage.
+Full prospect research. Anthropic web search tool with agentic loop. Writes to prospects, prospect_briefs, decision_makers (including targeting_tier + tier_reasoning). Fetches team_config and injects seniority_bands + target_functions into system prompt. Logs to api_usage. Always receives a `disambiguated_query` from the resolve flow (e.g. `"Delta Air Lines (NYSE: DAL, Atlanta GA)"`) rather than raw user input.
 
 ### POST /api/follow-up — to build
 Follow-up touch generation. Requires `reason` >= 10 words. Reads full note history. Logs to api_usage.
@@ -244,6 +250,8 @@ All custom colors are CSS variables on `:root` in `app/globals.css`:
 7. **API keys never touch the client.** `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `API_KEY_ENCRYPTION_SECRET` are used only in `/app/api/*` route handlers. User Anthropic keys are stored AES-256-GCM encrypted in `rep_profiles.anthropic_api_key`; encrypted via `POST /api/profile/api-key`; decrypted via `lib/crypto.ts` only inside API routes.
 
 8. **Case study slide images are never public.** The `case-study-slides` Supabase Storage bucket must be private. Always serve images via short-lived signed URLs from `/api/case-studies/slide-url/[id]`. Never expose the bucket URL directly to the client.
+
+9. **BYOK cost transparency at pause points.** Any operation using the user's Anthropic key with estimated cost ≥ ~$0.01 must show a plain-language cost range at the nearest natural workflow pause point (a dialog or confirmation step already in the flow). Never surface cost mid-flow, never with false precision. Use `COST_HINTS` from `lib/costs.ts` — do not hardcode strings at call sites. Sub-cent operations (resolve, case study match) show nothing.
 
 ## What Claude Code must never do (ProspectLord-specific)
 
