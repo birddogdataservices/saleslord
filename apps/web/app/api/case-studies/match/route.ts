@@ -8,6 +8,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
+import { withJob } from '@/lib/jobs'
 import type { CaseStudy, CaseStudyMatch } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -15,7 +16,16 @@ const MODEL = 'claude-sonnet-4-6'
 // ─────────────────────────────────────────
 // Route handler
 // ─────────────────────────────────────────
+// Job-tracked: withJob records this run in the jobs table (sidebar Jobs section).
 export async function POST(request: Request) {
+  return withJob(request, run, {
+    kind: 'case_study_match',
+    adminClient: createAdminClient(),
+    getContext: body => ({ prospectId: body?.prospect_id ?? null }),
+  })
+}
+
+async function run(request: Request): Promise<Response> {
   // 1. Auth
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -38,8 +48,13 @@ export async function POST(request: Request) {
   const { prospect_id } = await request.json() as { prospect_id?: string }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
-  // 4. Fetch prospect brief + all case studies in parallel
-  const [briefRes, caseStudiesRes, profileRes] = await Promise.all([
+  // 4. Fetch prospect (ownership check) + brief + all case studies in parallel
+  const [prospectRes, briefRes, caseStudiesRes, profileRes] = await Promise.all([
+    adminClient
+      .from('prospects')
+      .select('id, user_id')
+      .eq('id', prospect_id)
+      .single(),
     adminClient
       .from('prospect_briefs')
       .select('snapshot, initiatives, pain_signals, tech_signals, stats, industry')
@@ -58,6 +73,11 @@ export async function POST(request: Request) {
       .single(),
   ])
 
+  // Ownership check — adminClient bypasses RLS, so verify the prospect belongs
+  // to the caller. 404 (not 403) to avoid confirming the id exists.
+  if (!prospectRes.data || prospectRes.data.user_id !== user.id) {
+    return Response.json({ error: 'Prospect not found' }, { status: 404 })
+  }
   if (!briefRes.data) return Response.json({ error: 'No brief found — run research first' }, { status: 404 })
 
   const caseStudies = (caseStudiesRes.data ?? []) as CaseStudy[]

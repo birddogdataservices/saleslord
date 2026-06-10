@@ -9,6 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
+import { withJob } from '@/lib/jobs'
 import type { ProductPromptContext, NewsItem } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -66,7 +67,16 @@ Return ONLY valid JSON. No markdown fencing, no preamble, no trailing text.`
 // ─────────────────────────────────────────
 // Route handler
 // ─────────────────────────────────────────
+// Job-tracked: withJob records this run in the jobs table (sidebar Jobs section).
 export async function POST(request: Request) {
+  return withJob(request, run, {
+    kind: 'check_updates',
+    adminClient: createAdminClient(),
+    getContext: body => ({ prospectId: body?.prospect_id ?? null }),
+  })
+}
+
+async function run(request: Request): Promise<Response> {
   // 1. Auth
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -103,7 +113,11 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  if (!prospectRes.data) return Response.json({ error: 'Prospect not found' }, { status: 404 })
+  // Ownership check — adminClient bypasses RLS, so verify the prospect belongs
+  // to the caller. 404 (not 403) to avoid confirming the id exists.
+  if (!prospectRes.data || prospectRes.data.user_id !== user.id) {
+    return Response.json({ error: 'Prospect not found' }, { status: 404 })
+  }
   if (!briefRes.data)    return Response.json({ error: 'No brief found — run research first' }, { status: 404 })
 
   const prospect    = prospectRes.data
@@ -179,20 +193,18 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
     messages,
   })
+  let totalInputTokens  = response.usage.input_tokens
+  let totalOutputTokens = response.usage.output_tokens
 
-  const MAX_SEARCH_ITERATIONS = 4  // check-updates is narrower — one extra iteration vs research
-  let iterations = 0
-  while (response.stop_reason === 'tool_use' && iterations < MAX_SEARCH_ITERATIONS) {
-    iterations++
+  // web_search is a SERVER-side tool — searches execute inside a single API
+  // call, so stop_reason is never 'tool_use'. 'pause_turn' means the server-side
+  // loop hit its limit; continue by appending the assistant content and
+  // re-sending (no tool_results, no extra user message).
+  const MAX_CONTINUATIONS = 4  // check-updates is narrower than research
+  let continuations = 0
+  while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+    continuations++
     messages.push({ role: 'assistant', content: response.content })
-    const toolResults = response.content
-      .filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-      .map(b => ({
-        type: 'tool_result' as const,
-        tool_use_id: b.id,
-        content: (b as any).output ?? '',
-      }))
-    messages.push({ role: 'user', content: toolResults })
     response = await client.messages.create({
       model: MODEL,
       max_tokens: 1024,
@@ -200,12 +212,12 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
       tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
       messages,
     })
+    totalInputTokens  += response.usage.input_tokens
+    totalOutputTokens += response.usage.output_tokens
   }
 
   // Nudge if no JSON in response
   let textBlock = response.content.find(b => b.type === 'text')
-  let totalInputTokens  = response.usage.input_tokens
-  let totalOutputTokens = response.usage.output_tokens
 
   if (!textBlock || !textBlock.text.includes('{')) {
     messages.push({ role: 'assistant', content: response.content })
