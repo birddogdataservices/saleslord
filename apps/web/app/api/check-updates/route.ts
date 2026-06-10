@@ -96,6 +96,7 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false }).limit(1).single(),
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     adminClient.from('products').select('name, description, value_props, competitors')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: true }),
     // Most recent update blurb — used to determine "last checked" date
     adminClient.from('prospect_updates').select('created_at').eq('prospect_id', prospect_id)

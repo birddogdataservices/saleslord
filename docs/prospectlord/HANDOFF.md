@@ -1,6 +1,46 @@
 # ProspectLord — Handoff
 
-## Current version: 0.8.0 — Org Disambiguation + Cost Transparency
+## Current version: 0.9.0 — Per-User Products
+
+---
+
+## Session 11 summary (Per-User Products + Mandatory Product Gate)
+
+### What was built
+
+Products moved from a shared admin-managed table to per-user ownership. Each rep now creates and manages their own products on the `/setup` page — reps selling different things can share the platform, and a rep can redefine their products when they change companies. Creating at least one product is mandatory: all ProspectLord pages redirect to `/setup` until the user has one.
+
+### Files created / modified
+
+| File | Change |
+|---|---|
+| `packages/db/schema.sql` | `products` rebuilt per-user: `user_id` column (not null), `created_by` dropped, admin RLS policies replaced with `Users manage own products`, index now `(user_id, created_at)` |
+| `packages/db/migrations/2026-06-10_products_per_user.sql` | **New** — copies every shared product to every existing user, deletes shared rows, swaps policies/index |
+| `lib/types.ts` | `Product`: `created_by` → `user_id` |
+| `app/(app)/(gated)/layout.tsx` | **New** — mandatory-product gate; redirects to `/setup` when user has zero products |
+| `app/(app)/(gated)/` | `page.tsx`, `prospects/`, `admin/` moved into the gated group (URLs unchanged) |
+| `app/(app)/admin/products/` | **Deleted** — admin product management gone |
+| `app/(app)/setup/ProductsManager.tsx` | **New** — per-user product CRUD (ported from AdminProductsClient); add form auto-opens at zero products; `router.refresh()` after add/delete so the gate updates |
+| `app/(app)/setup/SetupForm.tsx` | Products now the first section, editable by everyone, outside the profile `<form>`; amber onboarding banner at zero products |
+| `app/(app)/setup/page.tsx` | Products fetch scoped `.eq('user_id', user.id)`; passes `userId` to form |
+| `app/api/research/route.ts` | Products fetch scoped to user; empty-products error no longer says "ask your admin" |
+| `app/api/refresh-email/route.ts` | Products fetch scoped to user |
+| `app/api/check-updates/route.ts` | Products fetch scoped to user |
+| `components/prospect/Sidebar.tsx` | "Manage products →" admin link removed |
+| `package.json` | Added `packageManager` field — required by turbo 2.9 to resolve workspaces |
+
+### Architecture decisions
+
+- **Migration copies products to every user** — nobody loses working state; each rep then edits their copies independently. Original shared rows are deleted.
+- **`created_by` dropped** — redundant once `user_id` is the owner. Admin role now governs only case studies, team config, and invites.
+- **Gate is a nested route group `(app)/(gated)/`** — canonical App Router pattern; layouts can't read the pathname, so exclusion of `/setup` is structural (it sits outside the group), not conditional. URLs are unchanged.
+- **Gate counts via the user's RLS client** — head-only count query, no admin client in a layout.
+- **API routes keep the admin client but add explicit `.eq('user_id', user.id)`** — client-side fetches (setup page, prospect page product selector) are auto-scoped by the new RLS policy.
+- **Products section rendered outside the profile `<form>`** — pressing Enter in a product field must not submit the profile form; product saves are independent Supabase writes.
+
+### ⚠️ Required migration
+
+`packages/db/migrations/2026-06-10_products_per_user.sql` — **already run in prod Supabase** (2026-06-10). Fresh environments get the new shape from `schema.sql` directly.
 
 ---
 
@@ -32,10 +72,6 @@ Two-phase prospect add flow. Instead of firing the expensive Sonnet research cal
 ### Cost transparency design principle (new)
 
 Any BYOK operation with estimated cost ≥ ~$0.01 should surface a plain-language cost range at the nearest natural workflow pause point. Never mid-flow, never with false precision. `lib/costs.ts` is the single source of truth for these ranges — update it when model pricing or typical token volumes change materially.
-
----
-
-## Current version: 0.7.0 — Decision Maker Targeting Tiers
 
 ---
 

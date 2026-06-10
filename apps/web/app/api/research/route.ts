@@ -158,10 +158,10 @@ export async function POST(request: Request) {
     return Response.json({ error: 'query is required' }, { status: 400 })
   }
 
-  // 4. Fetch rep profile + shared products + team targeting config
+  // 4. Fetch rep profile + the user's products + team targeting config
   const [{ data: profile }, { data: productRows }, { data: teamConfigRow }] = await Promise.all([
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
-    adminClient.from('products').select('name, description, value_props, competitors').order('created_at', { ascending: true }),
+    adminClient.from('products').select('name, description, value_props, competitors').eq('user_id', user.id).order('created_at', { ascending: true }),
     adminClient.from('team_config').select('seniority_bands, target_functions').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
 
   const products: ProductPromptContext[] = productRows ?? []
   if (products.length === 0) {
-    return Response.json({ error: 'No products have been configured yet. Ask your admin to add at least one product.' }, { status: 400 })
+    return Response.json({ error: 'No products configured yet. Add at least one product in Profile & Settings before running research.' }, { status: 400 })
   }
 
   // 5. Build and run the AI research call with agentic tool-use loop

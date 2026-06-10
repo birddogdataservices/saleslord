@@ -151,15 +151,6 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
         {isAdmin && (
           <>
             <Link
-              href="/admin/products"
-              className="text-[11px] transition-colors block mt-[5px]"
-              style={{ color: '#555' }}
-              onMouseEnter={e => ((e.target as HTMLElement).style.color = '#b8b6b0')}
-              onMouseLeave={e => ((e.target as HTMLElement).style.color = '#555')}
-            >
-              Manage products →
-            </Link>
-            <Link
               href="/admin/users"
               className="text-[11px] transition-colors block mt-[5px]"
               style={{ color: '#555' }}

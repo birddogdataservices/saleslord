@@ -47,13 +47,16 @@ controls entirely.
 │   ├── auth/callback/          # OAuth code exchange route
 │   └── (app)/                  # Auth-gated group layout (sidebar + main)
 │       ├── layout.tsx          # Fetches sidebar data, renders Sidebar + {children}
-│       ├── page.tsx            # Redirects to first prospect or /setup
-│       ├── setup/              # Rep profile setup page
-│       ├── admin/
-│       │   ├── products/       # Admin CRUD for shared products
-│       │   ├── users/          # Admin invite management (allowed_emails)
-│       │   └── case-studies/   # Admin CRUD + PDF deck import for case study library
-│       └── prospects/[id]/     # Full prospect summary page
+│       ├── setup/              # Rep profile page — products CRUD, voice, ICP, BYOK key
+│       │                       # (outside the product gate — it's where the gate redirects)
+│       └── (gated)/            # Mandatory-product gate — layout redirects to /setup
+│           │                   # when the user has zero products
+│           ├── layout.tsx      # The gate — counts user's products, redirects if 0
+│           ├── page.tsx        # Redirects to first prospect or /setup
+│           ├── admin/
+│           │   ├── users/          # Admin invite management (allowed_emails)
+│           │   └── case-studies/   # Admin CRUD + PDF deck import for case study library
+│           └── prospects/[id]/     # Full prospect summary page
 ├── components/
 │   ├── ui/                     # shadcn components
 │   └── prospect/
@@ -101,6 +104,7 @@ See `supabase/schema.sql` for the full migration. Tables:
 - `prospect_notes` — log entries; filter by state + industry
 - `follow_ups` — gated by reason (>= 10 words)
 - `api_usage` — every Anthropic call logged here with token counts + cost_usd
+- `products` — per-user product definitions; at least one required to use ProspectLord (see shape below)
 - `case_studies` — shared library; admin-managed; slide images in Supabase Storage bucket `case-study-slides`
 - `team_config` — singleton table (one row); `seniority_bands` + `target_functions` jsonb string arrays; admin-managed via `/api/admin/team-config`; all reps read; research route injects into system prompt
 
@@ -122,20 +126,34 @@ Preset target functions: Data Engineering, Data Platform, Data Architecture, Ana
 
 RLS: all authenticated users can read; no client writes — `/api/admin/team-config` uses service role only.
 
-## rep_profiles.products shape
+## products table shape
+
+Per-user — each rep owns and manages their own products via the `/setup` page.
+Creating at least one product is mandatory: the `(gated)` route group layout
+redirects users with zero products to `/setup`, and the research route 400s
+without one. This lets reps selling different things share the platform, and
+lets a rep redefine their products when they change companies.
 
 ```ts
 type Product = {
-  id: string           // client-generated UUID
+  id: string           // DB-generated UUID
+  user_id: string      // owner — RLS scopes all reads/writes to this user
   name: string
   description: string
   value_props: string
   competitors: string
+  created_at: string
 }
-// Stored as products jsonb default '[]' on rep_profiles
 ```
 
+RLS: `Users manage own products` — `auth.uid() = user_id` for all operations.
+API routes fetch with the admin client + explicit `.eq('user_id', user.id)`.
+
 The research prompt handles 1 or many products. With multiple products it instructs the model to match the most relevant one to the prospect.
+
+History: products were originally per-rep jsonb on `rep_profiles` (column still
+exists, deprecated), then a shared admin-managed table (Session 3), now per-user
+rows (migration `2026-06-10_products_per_user.sql`).
 
 ## case_studies table shape
 
