@@ -1,4 +1,17 @@
 // ─────────────────────────────────────────
+// Org disambiguation (resolve route + dialog)
+// ─────────────────────────────────────────
+
+export type OrgCandidate = {
+  name: string
+  hq_region: string | null    // ISO 3166-2, e.g. 'US-CA' — matched against territories
+  hq_display: string | null   // human-readable, e.g. 'Austin, TX'
+  description: string         // one-liner: what they do + identifying detail
+  disambiguated_query: string // enriched query passed to /api/research
+  confidence: number          // 0.0–1.0; territory boost applied server-side before sort
+}
+
+// ─────────────────────────────────────────
 // Database row types — keep in sync with supabase/schema.sql
 // ─────────────────────────────────────────
 

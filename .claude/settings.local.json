@@ -28,7 +28,12 @@
       "Bash(cp \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.env.local\" \"C:\\\\Users\\\\jonat\\\\Claude_Projects\\\\saleslord\\\\.claude\\\\worktrees\\\\infallible-dhawan-018395\\\\apps\\\\web\\\\.env.local\")",
       "Bash(COREPACK_ENABLE_STRICT=0 pnpm build)",
       "Bash(pnpm --filter @saleslord/web build)",
-      "Bash(pnpm install *)"
+      "Bash(pnpm install *)",
+      "Bash(npx tsc *)",
+      "Bash(ls /mnt/c/Users/jonat/Claude_Projects/saleslord/ 2>&1)",
+      "PowerShell(head -5)",
+      "Bash(pnpm dev *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)"
     ]
   }
 }

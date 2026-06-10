@@ -31,9 +31,13 @@ filter to it, and improve the results table (sort, filter by status, bulk action
 
 **Data source:** Wikidata SPARQL (free, no key)
 
-## ProspectLord status: stable at v0.7.0
+## ProspectLord status: v0.8.0 — Org disambiguation + cost transparency
 
-No active ProspectLord work. See [`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md).
+See [`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md).
+
+**Shipped this session:**
+- Org disambiguation flow — resolve route (Haiku), territory tiebreaker, confirmation dialog
+- Cost transparency design principle — `lib/costs.ts`, cost hint in dialog footer
 
 **Pending (not urgent):**
 - Case Study Matcher seeding — code complete, waiting on Pentaho PDF from Jon
