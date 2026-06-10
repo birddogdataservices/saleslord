@@ -124,12 +124,17 @@ at the repo root — Next.js looks for it relative to the app directory.
 
 Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v0.8.0** (Stage 2 monorepo restructure — apps/web + packages/core,signals,db)
+Current version: **v1.1.0** (per-user module visibility + job history sidebar)
 
-**Tag after merging to main:**
+Known gap: there is no v1.0.0 tag — the TerritoryLord session (documented as
+v1.0.0 in HANDOFF.md) was never tagged. Tags jump v0.9.0 → v1.1.0.
+
+**Tag after merging to main — and update the "Current version" line above in
+the same change. That line must always match the latest tag; if they disagree,
+trust `git tag` and fix this file.**
 ```bash
 git checkout main && git pull
-git tag v0.X.0 && git push origin v0.X.0
+git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
 Increment guide:
