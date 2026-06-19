@@ -15,6 +15,11 @@ const PRICING: Record<string, { input: number; output: number }> = {
     input:  3.00 / 1_000_000,
     output: 15.00 / 1_000_000,
   },
+  'claude-haiku-4-5': {
+    input:  1.00 / 1_000_000,
+    output: 5.00 / 1_000_000,
+  },
+  // Retired Feb 2026 — kept so historical api_usage cost lookups still resolve.
   'claude-haiku-3-5': {
     input:  0.80 / 1_000_000,
     output: 4.00 / 1_000_000,

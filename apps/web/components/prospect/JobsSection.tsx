@@ -7,6 +7,7 @@ import type { Job, JobKind } from '@/lib/types'
 const KIND_LABELS: Record<JobKind, string> = {
   research:         'Research',
   email_draft:      'Email draft',
+  pitch_opener:     'Pitch opener',
   check_updates:    'Update check',
   case_study_match: 'Case studies',
 }

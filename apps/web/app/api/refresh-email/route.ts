@@ -8,14 +8,18 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
-import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
-import type { ProductPromptContext } from '@/lib/types'
+import {
+  loadProspectContext,
+  getUserAnthropicKey,
+  resolveProducts,
+  buildProductsBlock,
+} from '@/lib/prospect-context'
 
 // Haiku is sufficient for email drafting — the context is already structured,
 // the output is short and constrained. 4× cheaper than Sonnet, noticeably faster.
 // Email refresh is excluded from the daily call limit (it doesn't count against research budget).
-const MODEL = 'claude-haiku-3-5'
+const MODEL = 'claude-haiku-4-5'
 
 // Job-tracked: withJob records this run in the jobs table (sidebar Jobs section).
 export async function POST(request: Request) {
@@ -44,71 +48,28 @@ async function run(request: Request): Promise<Response> {
   }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
-  // 4. Fetch prospect, brief, rep profile, products, and most recent update blurb in parallel
-  const [prospectRes, briefRes, profileRes, productRes, latestUpdateRes] = await Promise.all([
-    adminClient.from('prospects').select('*').eq('id', prospect_id).single(),
-    adminClient.from('prospect_briefs').select('*').eq('prospect_id', prospect_id)
-      .order('created_at', { ascending: false }).limit(1).single(),
-    adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
-    adminClient.from('products').select('id, name, description, value_props, competitors')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true }),
-    // Most recent update blurb — used to freshen the email context if available
+  // 4. Load prospect + brief + profile + products (shared loader, ownership-checked),
+  // plus the most recent update blurb (refresh-email only — freshens the context).
+  const [loaded, latestUpdateRes] = await Promise.all([
+    loadProspectContext(adminClient, prospect_id, user.id),
     adminClient.from('prospect_updates').select('summary, news_items, created_at')
       .eq('prospect_id', prospect_id)
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ])
+  if (!loaded.ok) return Response.json({ error: loaded.error }, { status: loaded.status })
 
-  // Ownership check — adminClient bypasses RLS, so verify the prospect belongs
-  // to the caller. 404 (not 403) to avoid confirming the id exists.
-  if (!prospectRes.data || prospectRes.data.user_id !== user.id) {
-    return Response.json({ error: 'Prospect not found' }, { status: 404 })
-  }
-  if (!briefRes.data)    return Response.json({ error: 'No brief found — run research first' }, { status: 404 })
-
-  const prospect    = prospectRes.data
-  const brief       = briefRes.data
-  const profile     = profileRes.data
+  const { prospect, brief, profile, allProducts } = loaded.value
   const latestUpdate = latestUpdateRes.data ?? null
 
-  // If a specific product_id was requested, filter to just that one.
-  // Otherwise pass all products and let the model pick the most relevant.
-  const allProducts: ProductPromptContext[] = productRes.data ?? []
-  const products: ProductPromptContext[] = product_id
-    ? allProducts.filter((p: any) => p.id === product_id)
-    : allProducts
-  // Fall back to all products if the requested id wasn't found
-  const activeProducts = products.length > 0 ? products : allProducts
-
   // BYOK hard gate — decrypt stored key; no platform fallback
-  const storedKey = profile?.anthropic_api_key?.trim()
-  if (!storedKey) {
-    return Response.json(
-      { error: 'No Anthropic API key configured. Add your key in Profile & Settings.' },
-      { status: 402 }
-    )
-  }
-  let userApiKey: string
-  try {
-    userApiKey = decryptApiKey(storedKey)
-  } catch {
-    return Response.json(
-      { error: 'Failed to decrypt your API key. Please re-enter it in Profile & Settings.' },
-      { status: 500 }
-    )
-  }
+  const key = getUserAnthropicKey(profile)
+  if (!key.ok) return Response.json({ error: key.error }, { status: key.status })
+  const userApiKey = key.value
 
-  // 5. Build a focused prompt — brief context + email rules only, no web search
-  const isFocused = product_id && products.length === 1
-  const productsBlock = activeProducts.length === 0
-    ? 'Products: not specified'
-    : isFocused
-      ? `Product (focus this email entirely on this product): ${activeProducts[0].name} — ${activeProducts[0].description}. Value props: ${activeProducts[0].value_props}. Competes with: ${activeProducts[0].competitors}`
-      : activeProducts.length === 1
-        ? `Product: ${activeProducts[0].name} — ${activeProducts[0].description}. Value props: ${activeProducts[0].value_props}. Competes with: ${activeProducts[0].competitors}`
-        : `Products (match the most relevant to this prospect):\n${activeProducts.map((p, i) =>
-            `  ${i + 1}. ${p.name}: ${p.description}. Value props: ${p.value_props}. Competes with: ${p.competitors}`
-          ).join('\n')}`
+  // 5. Build a focused prompt — brief context + email rules only, no web search.
+  // If a specific product_id was requested, focus on it; else let the model pick.
+  const { active: activeProducts, focused } = resolveProducts(allProducts, product_id)
+  const productsBlock = buildProductsBlock(activeProducts, focused)
 
   const systemPrompt = `You are a B2B sales email writer. Your only job is to write one cold outreach email.
 
