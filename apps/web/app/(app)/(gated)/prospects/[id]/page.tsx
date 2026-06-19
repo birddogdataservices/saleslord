@@ -8,6 +8,7 @@ import NewsCard from '@/components/prospect/NewsCard'
 import DecisionMakers from '@/components/prospect/DecisionMakers'
 import RightColumn from '@/components/prospect/RightColumn'
 import EmailDraftButton from '@/components/prospect/EmailDraftButton'
+import PitchOpenerButton from '@/components/prospect/PitchOpenerButton'
 import CheckUpdatesButton from '@/components/prospect/CheckUpdatesButton'
 import UpdateBlurbs from '@/components/prospect/UpdateBlurbs'
 import ReresearchButton from '@/components/prospect/ReresearchButton'
@@ -98,6 +99,16 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           )}
           {brief && (
             <CheckUpdatesButton prospectId={id} lastRefreshedAt={prospect.last_refreshed_at} />
+          )}
+          {brief && (
+            <PitchOpenerButton
+              prospectId={id}
+              products={products}
+              dms={dms}
+              painSignals={brief.pain_signals ?? []}
+              initiatives={brief.initiatives ?? []}
+              news={brief.news ?? []}
+            />
           )}
           {brief?.email && (
             <EmailDraftButton initialEmail={brief.email} prospectId={id} products={products} />

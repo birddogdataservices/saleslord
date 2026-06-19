@@ -218,7 +218,7 @@ export type ProspectSidebarItem = Pick<Prospect, 'id' | 'name' | 'last_refreshed
 // Jobs — AI job history (sidebar Jobs section)
 // ─────────────────────────────────────────
 
-export type JobKind = 'research' | 'email_draft' | 'check_updates' | 'case_study_match'
+export type JobKind = 'research' | 'email_draft' | 'pitch_opener' | 'check_updates' | 'case_study_match'
 
 export type Job = {
   id: string
