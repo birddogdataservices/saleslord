@@ -1,10 +1,12 @@
 // POST /api/pitch-opener
 // Generates a single opener paragraph the rep drops into the top of their own
-// email — NOT a full email. Anchored on one rep-chosen compelling event, one
-// product, and one persona. Uses the already-researched brief as context — no
-// web search, no re-research. Result is NOT persisted to the brief: it's a
-// composable building block the rep copies, not the canonical first touch.
-// Cheap call: ~1k tokens.
+// email — NOT a full email. Driven by ONE rep-chosen product: the model selects
+// the best-fit, non-vacuous signal from the brief and maps the product's
+// value-prop to the pain it implies. Persona and compelling event are optional
+// overrides — supply an event to force the anchor, a persona to target a role.
+// Uses the already-researched brief as context — no web search, no re-research.
+// Result is NOT persisted to the brief: it's a composable building block the rep
+// copies, not the canonical first touch. Cheap call: ~1k tokens.
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -46,13 +48,11 @@ async function run(request: Request): Promise<Response> {
   // 3. Parse body
   const { prospect_id, product_id, persona, compelling_event } = await request.json() as {
     prospect_id?: string
-    product_id?: string        // optional — focus the opener on this product
-    persona?: string           // required — the role/persona to address (DM or free text)
-    compelling_event?: string  // required — the one trigger to anchor on (brief signal or free text)
+    product_id?: string        // the product to pitch — drives signal selection
+    persona?: string           // optional — the role/persona to address (DM or free text)
+    compelling_event?: string  // optional — a specific trigger to anchor on; if absent the model picks the best-fit brief signal
   }
-  if (!prospect_id)                  return Response.json({ error: 'prospect_id is required' }, { status: 400 })
-  if (!persona?.trim())             return Response.json({ error: 'A persona is required' }, { status: 400 })
-  if (!compelling_event?.trim())    return Response.json({ error: 'A compelling event is required' }, { status: 400 })
+  if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
   // 4. Load prospect + brief + profile + products (shared loader, ownership-checked)
   const loaded = await loadProspectContext(adminClient, prospect_id, user.id)
@@ -82,16 +82,28 @@ ${PITCH_OPENER_RULES}
 Return ONLY valid JSON, no markdown, no preamble:
 {"paragraph": "string"}`
 
-  // Background brief context — for grounding only. The rep's chosen event is the
-  // anchor; the rest helps the model be concrete and accurate.
-  const companyContext = `Company: ${prospect.name}
-Persona to address: ${persona!.trim()}
-Compelling event to anchor on (build the paragraph around THIS): ${compelling_event!.trim()}
+  // Brief context. When the rep names an event, it is the anchor. When they
+  // don't, the candidate signals below are the model's menu — it picks the one
+  // that best fits the chosen product (per PITCH_OPENER_RULES).
+  const trimmedPersona = persona?.trim()
+  const trimmedEvent   = compelling_event?.trim()
+  const newsText       = (brief.news ?? []).map((n: { text: string }) => n.text)
 
-Background (for grounding — do not introduce other triggers):
-Snapshot: ${brief.snapshot ?? 'not available'}
+  const companyContext = `Company: ${prospect.name}
+${trimmedPersona
+  ? `Persona to address: ${trimmedPersona}`
+  : 'Persona: none specified — speak to the company\'s need, do not invent a role.'}
+${trimmedEvent
+  ? `Compelling event to anchor on (build the paragraph around THIS): ${trimmedEvent}`
+  : 'No specific event chosen — select the single best-fit signal for the product from the candidate signals below.'}
+
+Candidate signals from the brief (choose the most product-relevant, concrete one; ignore vacuous ones):
 Strategic initiatives: ${(brief.initiatives ?? []).join('; ') || 'none'}
 Pain signals: ${(brief.pain_signals ?? []).join('; ') || 'none'}
+Recent news: ${newsText.join('; ') || 'none'}
+
+Grounding (do not introduce triggers not present above):
+Snapshot: ${brief.snapshot ?? 'not available'}
 Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
 
   // 6. Generate — no tools, text only

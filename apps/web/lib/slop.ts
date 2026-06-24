@@ -41,3 +41,10 @@ export function detectSlop(text: string): string[] {
   const lower = text.toLowerCase()
   return SLOP_PHRASES.filter(p => lower.includes(p))
 }
+
+// Renders SLOP_PHRASES as a quoted, comma-separated ban list for injection into
+// generation system prompts. Keeps the proactive prompt guard in sync with the
+// post-hoc detectSlop() check — change the list once, both follow.
+export function slopBanListForPrompt(): string {
+  return SLOP_PHRASES.map(p => `"${p}"`).join(', ')
+}
