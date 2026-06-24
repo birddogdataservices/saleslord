@@ -32,7 +32,8 @@ function personaLabel(d: DecisionMaker): string {
 
 export default function PitchOpenerButton({ prospectId, products, dms, painSignals, initiatives, news }: Props) {
   const [open,              setOpen]              = useState(false)
-  const [selectedProductId, setSelectedProductId] = useState<string>('')   // '' = auto
+  // Product drives signal selection — default to the first product, never empty.
+  const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id ?? '')
 
   // Persona: pick a DM or choose custom → free text
   const [personaChoice, setPersonaChoice] = useState<string>('')  // '' = none, CUSTOM, or a DM label
@@ -53,11 +54,10 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
     { label: 'Recent news',           items: (news ?? []).map(n => n.text) },
   ].filter(g => g.items.length > 0)), [painSignals, initiatives, news])
 
-  const hasSignals = eventGroups.length > 0
-
   const persona = personaChoice === CUSTOM ? personaCustom.trim() : personaChoice.trim()
   const event   = eventChoice   === CUSTOM ? eventCustom.trim()   : eventChoice.trim()
-  const canGenerate = persona.length > 0 && event.length > 0 && !generating
+  // Product is the only requirement now — persona and event are both optional.
+  const canGenerate = selectedProductId.length > 0 && !generating
 
   const slopHits = paragraph ? detectSlop(paragraph) : []
   const words    = paragraph ? wordCount(paragraph) : 0
@@ -71,8 +71,8 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
         body:    JSON.stringify({
           prospect_id:      prospectId,
           product_id:       selectedProductId || undefined,
-          persona,
-          compelling_event: event,
+          persona:          persona || undefined,
+          compelling_event: event || undefined,
         }),
       })
       if (!res.ok) {
@@ -175,7 +175,7 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
               {/* Inputs */}
               <div className="flex flex-col gap-3">
 
-                {/* Product */}
+                {/* Product — drives signal selection; always shown, always set */}
                 {products.length > 1 && (
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={labelStyle}>Product to pitch</span>
@@ -186,7 +186,6 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
                       className="rounded-[6px] border px-2 py-[5px] text-[12px] outline-none disabled:opacity-50"
                       style={selectStyle}
                     >
-                      <option value="">Auto — most relevant</option>
                       {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
@@ -194,7 +193,7 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
 
                 {/* Persona */}
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={labelStyle}>Persona / role</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={labelStyle}>Persona / role (optional)</span>
                   <select
                     value={personaChoice}
                     onChange={e => setPersonaChoice(e.target.value)}
@@ -202,7 +201,7 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
                     className="rounded-[6px] border px-2 py-[5px] text-[12px] outline-none disabled:opacity-50"
                     style={selectStyle}
                   >
-                    <option value="">Select a persona…</option>
+                    <option value="">None — speak to the company</option>
                     {dms.length > 0 && (
                       <optgroup label="Decision makers">
                         {dms.map(d => {
@@ -226,9 +225,9 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
                   )}
                 </div>
 
-                {/* Compelling event */}
+                {/* Compelling event — optional override; blank lets the model pick the best fit */}
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={labelStyle}>Compelling event</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={labelStyle}>Compelling event (optional)</span>
                   <select
                     value={eventChoice}
                     onChange={e => setEventChoice(e.target.value)}
@@ -236,7 +235,7 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
                     className="rounded-[6px] border px-2 py-[5px] text-[12px] outline-none disabled:opacity-50"
                     style={selectStyle}
                   >
-                    <option value="">{hasSignals ? 'Select a signal…' : 'No signals found — type your own below'}</option>
+                    <option value="">Auto — best-fit signal for this product</option>
                     {eventGroups.map(g => (
                       <optgroup key={g.label} label={g.label}>
                         {g.items.map((item, i) => <option key={`${g.label}-${i}`} value={item}>{item}</option>)}
