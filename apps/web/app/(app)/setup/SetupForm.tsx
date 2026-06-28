@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import ProductsManager from './ProductsManager'
+import { LANGUAGES, normalizeLocale } from '@/lib/i18n/languages'
 import type { RepProfile, Product, TeamConfig } from '@/lib/types'
 
 // ── Targeting presets ─────────────────────────────────────────────────────────
@@ -34,12 +37,39 @@ function voiceStatus(samples: string) {
 
 export default function SetupForm({ profile, products, hasApiKey, teamConfig, userId }: Props) {
   const supabase = createClient()
+  const router   = useRouter()
+  const t        = useTranslations('Setup')
+  const tc       = useTranslations('Common')
 
   const [repBackground, setBackground] = useState(profile?.rep_background ?? '')
   const [voiceSamples,  setVoice]      = useState(profile?.voice_samples  ?? '')
   const [icp,           setIcp]        = useState(profile?.icp_description ?? '')
   const [apiKey,        setApiKey]     = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Language drives chrome + default generation language. Saving it goes through
+  // /api/profile/locale (writes rep_profiles.locale AND the NEXT_LOCALE cookie),
+  // then router.refresh() so the chrome re-renders in the new language.
+  const [locale,       setLocale]       = useState<string>(normalizeLocale(profile?.locale))
+  const [savingLocale, setSavingLocale] = useState(false)
+
+  async function saveLocale(next: string) {
+    setLocale(next)
+    setSavingLocale(true)
+    const res = await fetch('/api/profile/locale', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ locale: next }),
+    })
+    setSavingLocale(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data.error ?? t('toastLanguageFailed'))
+      return
+    }
+    toast.success(t('toastLanguageSaved'))
+    router.refresh()
+  }
 
   // Targeting state — initialized from team_config, merged with presets
   const [seniorityBands,   setSeniorityBands]   = useState<string[]>(teamConfig?.seniority_bands   ?? [])
@@ -70,8 +100,8 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
     })
     const data = await res.json()
     setSavingTargeting(false)
-    if (!res.ok) { toast.error(data.error ?? 'Failed to save targeting config.'); return }
-    toast.success('Targeting config saved.')
+    if (!res.ok) { toast.error(data.error ?? t('toastTargetingFailed')); return }
+    toast.success(t('toastTargetingSaved'))
   }
 
   function toggleChip(list: string[], setList: (v: string[]) => void, value: string) {
@@ -94,7 +124,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
     setSaving(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { toast.error('Not authenticated.'); setSaving(false); return }
+    if (!user) { toast.error(t('toastNotAuthed')); setSaving(false); return }
 
     // Save profile fields via Supabase client (anon key — no secrets here)
     const { error } = await supabase
@@ -107,7 +137,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
         updated_at:      new Date().toISOString(),
       }, { onConflict: 'user_id' })
 
-    if (error) { setSaving(false); toast.error('Failed to save profile.'); return }
+    if (error) { setSaving(false); toast.error(t('toastProfileFailed')); return }
 
     // Save API key via server route — encrypted before DB write, never touches client
     if (apiKey.trim()) {
@@ -117,12 +147,12 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
         body:    JSON.stringify({ api_key: apiKey.trim() }),
       })
       const keyData = await keyRes.json()
-      if (!keyRes.ok) { setSaving(false); toast.error(keyData.error ?? 'Failed to save API key.'); return }
+      if (!keyRes.ok) { setSaving(false); toast.error(keyData.error ?? t('toastApiKeyFailed')); return }
       setApiKey('')
     }
 
     setSaving(false)
-    toast.success('Profile saved.')
+    toast.success(t('toastProfileSaved'))
   }
 
   return (
@@ -135,14 +165,13 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
             className="rounded-[10px] px-5 py-4 text-[12px] leading-relaxed"
             style={{ background: 'var(--sl-amber-bg)', color: 'var(--sl-amber-t)', border: '1px solid var(--sl-amber-t)' }}
           >
-            <span className="font-semibold">Create your first product to get started.</span>{' '}
-            Briefs, email drafts, and research are all generated against your product context —
-            ProspectLord unlocks once you've added at least one.
+            <span className="font-semibold">{t('onboardingBannerTitle')}</span>{' '}
+            {t('onboardingBannerBody')}
           </div>
         )}
         <Section
-          title="Your products"
-          hint="What you sell. All of your products are injected into every research and email call. Yours alone — update them any time, including when you change companies."
+          title={t('productsTitle')}
+          hint={t('productsHint')}
           required
         >
           <ProductsManager initialProducts={products} userId={userId} />
@@ -163,15 +192,15 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
             width: 6, height: 6,
             background: status === 'calibrated' ? 'var(--sl-green-t)' : 'var(--sl-amber-t)',
           }} />
-          {status === 'calibrated' ? 'Voice calibrated' : 'Add voice samples for best results'}
+          {status === 'calibrated' ? t('voiceCalibrated') : t('voiceUncalibrated')}
         </span>
       </div>
 
       {/* ── 1. Background ── */}
-      <Section title="Your background" hint="Relevant experience, past companies, or expertise the model can reference naturally in outreach.">
+      <Section title={t('backgroundTitle')} hint={t('backgroundHint')}>
         <Textarea
           rows={3}
-          placeholder="e.g. 8 years in data engineering before moving to sales. Built pipelines at Stripe and Plaid. Sold to CTOs and VPs of Engineering at Series B–public companies."
+          placeholder={t('backgroundPlaceholder')}
           value={repBackground}
           onChange={e => setBackground(e.target.value)}
           className="text-[12px] resize-y"
@@ -181,13 +210,13 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
 
       {/* ── 2. Voice samples ── */}
       <Section
-        title="Voice samples"
-        hint="Paste 2–5 of your best-performing emails or LinkedIn messages. The assistant will match your sentence length, how you open, how you close, and what you don't say. More samples = better calibration. These are never shared or used for training."
+        title={t('voiceTitle')}
+        hint={t('voiceHint')}
         required
       >
         <Textarea
           rows={8}
-          placeholder="Paste your best emails or LinkedIn messages here…"
+          placeholder={t('voicePlaceholder')}
           value={voiceSamples}
           onChange={e => setVoice(e.target.value)}
           className="text-[12px] resize-y"
@@ -196,10 +225,10 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
       </Section>
 
       {/* ── 3. ICP ── */}
-      <Section title="Ideal customer profile" hint="Who you're trying to reach. Used to filter and prioritize research.">
+      <Section title={t('icpTitle')} hint={t('icpHint')}>
         <Textarea
           rows={3}
-          placeholder="e.g. Series B+ data infrastructure companies, 200–2,000 employees, VP or above economic buyer, Snowflake or dbt in the stack, US-based."
+          placeholder={t('icpPlaceholder')}
           value={icp}
           onChange={e => setIcp(e.target.value)}
           className="text-[12px] resize-y"
@@ -207,15 +236,27 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
         />
       </Section>
 
+      {/* ── Language ── (saved immediately via its own route — outside the profile form submit) */}
+      <Section title={t('languageTitle')} hint={t('languageHint')}>
+        <select
+          value={locale}
+          onChange={e => saveLocale(e.target.value)}
+          disabled={savingLocale}
+          className="rounded-[6px] px-3 py-2 text-[12px] outline-none disabled:opacity-50 self-start"
+          style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
+        >
+          {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+        </select>
+      </Section>
+
       {/* ── 4. Targeting ── */}
       <div className="flex flex-col gap-4 rounded-[10px] px-5 py-5" style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)' }}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-[13px] font-semibold" style={{ color: 'var(--sl-text)' }}>Targeting</h2>
+            <h2 className="text-[13px] font-semibold" style={{ color: 'var(--sl-text)' }}>{t('targetingTitle')}</h2>
             <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: 'var(--sl-text3)' }}>
-              Seniority and function rules used to tier decision makers on every research run.
-              Shared across the team.{' '}
-              {!profile?.is_admin && <span style={{ color: 'var(--sl-amber-t)' }}>Admin-only to edit.</span>}
+              {t('targetingHint')}{' '}
+              {!profile?.is_admin && <span style={{ color: 'var(--sl-amber-t)' }}>{t('adminOnlyToEdit')}</span>}
             </p>
           </div>
           {profile?.is_admin && (
@@ -226,14 +267,14 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
               className="flex-shrink-0 rounded-[6px] px-3 py-1.5 text-[11px] font-medium transition-opacity hover:opacity-90 disabled:opacity-50 cursor-pointer"
               style={{ background: 'var(--sl-text)', color: '#F0EDE6', border: 'none' }}
             >
-              {savingTargeting ? 'Saving…' : 'Save targeting'}
+              {savingTargeting ? tc('saving') : t('saveTargeting')}
             </button>
           )}
         </div>
 
         {/* Seniority bands */}
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] font-medium" style={{ color: 'var(--sl-text2)' }}>Target seniority bands</p>
+          <p className="text-[11px] font-medium" style={{ color: 'var(--sl-text2)' }}>{t('targetSeniorityBands')}</p>
           <div className="flex flex-wrap gap-1.5">
             {allBands.map(band => {
               const selected = seniorityBands.includes(band)
@@ -263,7 +304,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
                 type="search"
                 value={customBandInput}
                 onChange={e => setCustomBandInput(e.target.value)}
-                placeholder="Add custom band…"
+                placeholder={t('addCustomBand')}
                 className="rounded-[6px] px-2.5 py-1 text-[11px] outline-none flex-1"
                 style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
               />
@@ -272,7 +313,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
                 className="text-[11px] px-2.5 py-1 rounded-[6px]"
                 style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface2)', color: 'var(--sl-text2)' }}
               >
-                Add
+                {tc('add')}
               </button>
             </form>
           )}
@@ -280,7 +321,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
 
         {/* Target functions */}
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] font-medium" style={{ color: 'var(--sl-text2)' }}>Target functions</p>
+          <p className="text-[11px] font-medium" style={{ color: 'var(--sl-text2)' }}>{t('targetFunctions')}</p>
           <div className="flex flex-wrap gap-1.5">
             {allFuncs.map(fn => {
               const selected = targetFunctions.includes(fn)
@@ -310,7 +351,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
                 type="search"
                 value={customFuncInput}
                 onChange={e => setCustomFuncInput(e.target.value)}
-                placeholder="Add custom function…"
+                placeholder={t('addCustomFunction')}
                 className="rounded-[6px] px-2.5 py-1 text-[11px] outline-none flex-1"
                 style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
               />
@@ -319,7 +360,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
                 className="text-[11px] px-2.5 py-1 rounded-[6px]"
                 style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface2)', color: 'var(--sl-text2)' }}
               >
-                Add
+                {tc('add')}
               </button>
             </form>
           )}
@@ -328,8 +369,8 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
 
       {/* ── 5. Anthropic API key ── */}
       <Section
-        title="Anthropic API key"
-        hint="Required to run research and email generation. Get yours at console.anthropic.com. Stored securely — never shown again after saving."
+        title={t('apiKeyTitle')}
+        hint={t('apiKeyHint')}
         required
       >
         <div className="flex flex-col gap-2">
@@ -339,20 +380,20 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
               style={{ background: 'var(--sl-green-bg)', color: 'var(--sl-green-t)' }}
             >
               <span className="rounded-full inline-block" style={{ width: 6, height: 6, background: 'var(--sl-green-t)' }} />
-              API key configured
+              {t('apiKeyConfigured')}
             </div>
           )}
           <input
             type="password"
             autoComplete="off"
-            placeholder={hasApiKey ? 'Enter new key to replace existing…' : 'sk-ant-…'}
+            placeholder={hasApiKey ? t('apiKeyPlaceholderReplace') : t('apiKeyPlaceholderEmpty')}
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
             className="rounded-[6px] px-3 py-2 text-[12px] outline-none font-mono"
             style={{ borderColor: 'var(--sl-border)', border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
           />
           <p className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
-            Leave blank to keep your current key. Your key is used only server-side and never logged.
+            {t('apiKeyNote')}
           </p>
         </div>
       </Section>
@@ -360,7 +401,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
       {/* Save */}
       <div className="flex items-center justify-between pt-2 pb-8">
         <p className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
-          Changes take effect on the next research or follow-up generation.
+          {t('changesNote')}
         </p>
         <button
           type="submit"
@@ -368,7 +409,7 @@ export default function SetupForm({ profile, products, hasApiKey, teamConfig, us
           className="rounded-[6px] px-4 py-2 text-[12px] font-medium transition-opacity hover:opacity-90 disabled:opacity-50 cursor-pointer"
           style={{ background: 'var(--sl-text)', color: '#F0EDE6', border: 'none' }}
         >
-          {saving ? 'Saving…' : 'Save profile'}
+          {saving ? tc('saving') : t('saveProfile')}
         </button>
       </div>
       </form>

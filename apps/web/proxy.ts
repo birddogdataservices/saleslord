@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { GATED_MODULES } from '@/lib/modules'
+import { isSupportedLocale, LOCALE_COOKIE } from '@/lib/i18n/languages'
 
 // Routes that don't require authentication
 const PUBLIC_PATHS = ['/login', '/auth/callback', '/access-denied']
@@ -48,6 +49,31 @@ export async function proxy(request: NextRequest) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/login'
     return NextResponse.redirect(loginUrl)
+  }
+
+  // ── Chrome locale cookie backfill ───────────────────────────────
+  // The NEXT_LOCALE cookie mirrors rep_profiles.locale and feeds the next-intl
+  // resolver. /setup keeps it in sync going forward; this fills it once for
+  // existing sessions that predate i18n so chrome localizes before the rep next
+  // visits /setup. Steady state: cookie present → no fetch.
+  if (!request.cookies.get(LOCALE_COOKIE)) {
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY!
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/rep_profiles?user_id=eq.${user.id}&select=locale`,
+        { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+      )
+      const rows: { locale: string }[] = await res.json()
+      const locale = rows?.[0]?.locale
+      if (isSupportedLocale(locale)) {
+        supabaseResponse.cookies.set(LOCALE_COOKIE, locale, {
+          path: '/', maxAge: 31536000, sameSite: 'lax',
+        })
+      }
+    } catch {
+      // Non-fatal — chrome falls back to en-US until the next request.
+    }
   }
 
   // ── Access control ──────────────────────────────────────────────

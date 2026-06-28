@@ -1,6 +1,61 @@
 # ProspectLord — Handoff
 
-## Current version: 0.9.0 — Per-User Products
+## Current version: v1.4.0 — i18n / multi-language
+
+---
+
+## Session 12 summary (i18n / multi-language)
+
+### What was built
+
+ProspectLord is now multi-language, **profile-driven** (no URL-based locale routing).
+Two stored values drive everything: `rep_profiles.locale` (chrome + default generation
+language) and `prospects.output_language_override` (sticky per-prospect, emails/pitches
+only). Language is chosen by **audience** — rep-facing content always follows the
+profile; prospect-facing content is overridable per generation and sticks to the
+prospect. Six languages: en-US, en-GB, es, pt-BR, fr, de. See the
+**Internationalization** section in `docs/prospectlord/CLAUDE.md` for the durable design.
+
+### Files created / modified
+
+| File | Change |
+|---|---|
+| `packages/db/migrations/2026-06-25_i18n.sql` | **New** — `rep_profiles.locale` (default `en-US`), `prospects.output_language_override` (nullable) |
+| `packages/db/schema.sql` | Mirrored both columns into the source of truth |
+| `apps/web/lib/i18n/languages.ts` | **New** — single source of truth: the 6, helpers, `languageDirective`, `JSON_LANGUAGE_RULE`, `resolveProspectLanguage`, `PROFILE_DEFAULT` |
+| `apps/web/i18n/request.ts` | **New** — next-intl request config; reads `NEXT_LOCALE` cookie, deep-merges en-US fallback |
+| `apps/web/next.config.ts` | Wrapped with `createNextIntlPlugin()` |
+| `apps/web/app/layout.tsx` | `NextIntlClientProvider` at root; `<html lang>` from `getLocale()` |
+| `apps/web/messages/{en-US,en-GB,es,pt-BR,fr,de}.json` | **New** — chrome catalogs (en-US base, all 6 authored) |
+| `apps/web/scripts/translate-catalog.ts` | **New** — author-time catalog translation (for new locales / regen) |
+| `apps/web/app/api/profile/locale/route.ts` | **New** — writes `rep_profiles.locale` + sets `NEXT_LOCALE` cookie |
+| `apps/web/proxy.ts` | One-time `NEXT_LOCALE` cookie backfill for pre-i18n sessions |
+| `apps/web/app/api/{research,check-updates,case-studies/match}/route.ts` | Append `languageDirective(profile.locale)` + `JSON_LANGUAGE_RULE` (rep-facing) |
+| `apps/web/app/api/{refresh-email,pitch-opener}/route.ts` | Resolve language by audience + sticky write-back of the override |
+| `apps/web/components/prospect/{EmailDraftButton,PitchOpenerButton}.tsx` | Language dropdown (6 + Profile default), pre-select override, send `languageSelection` |
+| `apps/web/app/(app)/setup/{page,SetupForm}.tsx` | Locale selector (saves via the new route + `router.refresh()`); chrome strings extracted |
+| `apps/web/app/login/page.tsx`, `app/access-denied/page.tsx`, `components/prospect/{Sidebar,JobsSection}.tsx`, `app/(app)/(gated)/prospects/[id]/page.tsx` | Chrome strings extracted to catalogs; cost displays use next-intl currency formatting |
+| `apps/web/lib/types.ts` | `RepProfile.locale`, `Prospect.output_language_override` |
+
+### Architecture decisions
+
+- **Cookie mirrors the profile** — chrome locale reads `NEXT_LOCALE`, kept in lockstep
+  with `rep_profiles.locale` by the locale route (+ a one-time proxy backfill). Avoids a
+  Supabase hit per render across every route.
+- **Deep-merge en-US fallback** in `i18n/request.ts` — partial/untranslated catalogs
+  never blank the UI.
+- **One source of truth** (`lib/i18n/languages.ts`) for the list, the directive, and the
+  sentinel — the /setup selector, compose dropdowns, and prompts never hardcode their own.
+- **JSON keys stay English** in structured prompts (`JSON_LANGUAGE_RULE`) — verified the
+  research brief and case-study matcher still parse.
+- **Chrome extraction scoped** to the high-visibility surfaces this session; remaining
+  brief sub-components fall back to en-US (backlog: extraction sweep).
+
+### ⚠️ Required after merge
+
+1. Run `packages/db/migrations/2026-06-25_i18n.sql` in prod Supabase (same pattern as prior migrations).
+2. Tag **v1.4.0** and bump the "Current version" line in the **root** `CLAUDE.md` in the same change.
+3. Optional: have the Brazilian teammate review `messages/pt-BR.json`; regenerate any locale with `npx tsx scripts/translate-catalog.ts <code>`.
 
 ---
 

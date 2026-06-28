@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
+import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import type { ProductPromptContext, NewsItem } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -177,11 +178,12 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
 
   // 7. Run agentic web search loop
   const client = new Anthropic({ apiKey: userApiKey })
+  // Rep-facing (the update summary is read by the rep) → always profile.locale.
   const systemPrompt = buildSystemPrompt(
     products,
     profile?.rep_background ?? '',
     profile?.voice_samples ?? '',
-  )
+  ) + `\n\n${languageDirective(profile?.locale)} ${JSON_LANGUAGE_RULE}`
 
   type AntMessage = Anthropic.MessageParam
   const messages: AntMessage[] = [{ role: 'user', content: userMessage }]

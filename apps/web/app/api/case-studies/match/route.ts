@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
+import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import type { CaseStudy, CaseStudyMatch } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -68,7 +69,7 @@ async function run(request: Request): Promise<Response> {
       .order('created_at', { ascending: true }),
     adminClient
       .from('rep_profiles')
-      .select('anthropic_api_key')
+      .select('anthropic_api_key, locale')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -145,10 +146,13 @@ Order matches by relevance_score descending. No markdown, no preamble.`
   // 6. Single Claude call, no web search
   const client = new Anthropic({ apiKey: userApiKey })
 
+  // Rep-facing: match-reason chips are read by the rep → profile.locale. Slides
+  // stay English (authored in English). JSON rule keeps keys English so the merge
+  // by case_study_id still resolves.
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 1024,
-    system: 'You are matching B2B sales case studies to a prospect profile. Return JSON only.',
+    system: `You are matching B2B sales case studies to a prospect profile. Return JSON only.\n\n${languageDirective(profileRes.data?.locale)} ${JSON_LANGUAGE_RULE}`,
     messages: [{ role: 'user', content: userMessage }],
   })
 

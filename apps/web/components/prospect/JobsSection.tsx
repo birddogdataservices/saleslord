@@ -1,20 +1,25 @@
 'use client'
 
 import Link from 'next/link'
+import { useTranslations, useFormatter } from 'next-intl'
 import { useEffect, useState } from 'react'
 import type { Job, JobKind } from '@/lib/types'
 
-const KIND_LABELS: Record<JobKind, string> = {
-  research:         'Research',
-  email_draft:      'Email draft',
-  pitch_opener:     'Pitch opener',
-  check_updates:    'Update check',
-  case_study_match: 'Case studies',
+// Each job kind → its catalog key under the Jobs namespace.
+const KIND_KEYS: Record<JobKind, string> = {
+  research:         'kindResearch',
+  email_draft:      'kindEmailDraft',
+  pitch_opener:     'kindPitchOpener',
+  check_updates:    'kindCheckUpdates',
+  case_study_match: 'kindCaseStudyMatch',
 }
 
 const RUNNING_POLL_MS = 5_000
 const IDLE_POLL_MS    = 20_000
 
+const USD = { style: 'currency', currency: 'USD' } as const
+
+// Elapsed/runtime is a locale-neutral stopwatch (m:ss) — not localized.
 function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(totalSec / 60)
@@ -22,11 +27,8 @@ function formatDuration(ms: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function formatCost(cost: number): string {
-  return cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`
-}
-
 export default function JobsSection() {
+  const t = useTranslations('Jobs')
   const [jobs, setJobs] = useState<Job[]>([])
   const [collapsed, setCollapsed] = useState(false)
   const [, setTick] = useState(0)
@@ -79,11 +81,11 @@ export default function JobsSection() {
         style={{ background: 'none', border: 'none', cursor: 'pointer' }}
       >
         <span className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#484844' }}>
-          {collapsed ? '▸' : '▾'} Jobs
+          {collapsed ? '▸' : '▾'} {t('title')}
         </span>
         {hasRunning && (
           <span className="text-[10px]" style={{ color: '#d4a24e' }}>
-            {running.length} running
+            {t('running', { count: running.length })}
           </span>
         )}
       </button>
@@ -94,6 +96,8 @@ export default function JobsSection() {
 }
 
 function JobRow({ job }: { job: Job }) {
+  const t = useTranslations('Jobs')
+  const format = useFormatter()
   const isRunning = job.status === 'running'
   const elapsed = isRunning
     ? Date.now() - new Date(job.started_at).getTime()
@@ -120,14 +124,18 @@ function JobRow({ job }: { job: Job }) {
       <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px]" style={{ color: '#b8b6b0' }}>
         {job.company_name}
         <span className="ml-[6px] text-[10px]" style={{ color: '#484844' }}>
-          {KIND_LABELS[job.kind] ?? job.kind}
+          {KIND_KEYS[job.kind] ? t(KIND_KEYS[job.kind]) : job.kind}
         </span>
       </span>
       <span className="flex-shrink-0 text-[10px] text-right" style={{ color: '#484844' }}>
         {isRunning ? formatDuration(elapsed) : (
           <>
             {formatDuration(elapsed)}
-            {job.cost_usd != null && <span className="ml-[6px]" style={{ color: '#6b6a64' }}>{formatCost(Number(job.cost_usd))}</span>}
+            {job.cost_usd != null && (
+              <span className="ml-[6px]" style={{ color: '#6b6a64' }}>
+                {Number(job.cost_usd) < 0.01 ? `<${format.number(0.01, USD)}` : format.number(Number(job.cost_usd), USD)}
+              </span>
+            )}
           </>
         )}
       </span>

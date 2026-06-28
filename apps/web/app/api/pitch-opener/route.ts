@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { PITCH_OPENER_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
+import { languageDirective, resolveProspectLanguage } from '@/lib/i18n/languages'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -46,11 +47,12 @@ async function run(request: Request): Promise<Response> {
   // 2. No rate limit check — same rationale as email refresh (Haiku, cheap, iterative).
 
   // 3. Parse body
-  const { prospect_id, product_id, persona, compelling_event } = await request.json() as {
+  const { prospect_id, product_id, persona, compelling_event, languageSelection } = await request.json() as {
     prospect_id?: string
     product_id?: string        // the product to pitch — drives signal selection
     persona?: string           // optional — the role/persona to address (DM or free text)
     compelling_event?: string  // optional — a specific trigger to anchor on; if absent the model picks the best-fit brief signal
+    languageSelection?: string // optional — a supported code, or the "Profile default" sentinel
   }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
@@ -68,6 +70,14 @@ async function run(request: Request): Promise<Response> {
   const { active: activeProducts, focused } = resolveProducts(allProducts, product_id)
   const productsBlock = buildProductsBlock(activeProducts, focused)
 
+  // Prospect-facing (the opener goes into an email to the prospect) → explicit
+  // selection wins and sticks; else stored override; else the rep's locale.
+  const { lang, overrideWrite } = resolveProspectLanguage({
+    selection:      languageSelection,
+    storedOverride: prospect.output_language_override,
+    profileLocale:  profile?.locale,
+  })
+
   const systemPrompt = `You are a B2B sales writer. Your only job is to write one opening paragraph the rep will paste into the top of an email they finish themselves.
 
 Rep context:
@@ -78,6 +88,8 @@ ${profile?.voice_samples
   : '- Voice samples: not provided. Write in a clear, direct, human voice.'}
 
 ${PITCH_OPENER_RULES}
+
+${languageDirective(lang)}
 
 Return ONLY valid JSON, no markdown, no preamble:
 {"paragraph": "string"}`
@@ -135,7 +147,15 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
     return Response.json({ error: 'Failed to parse opener response' }, { status: 500 })
   }
 
-  // 8. NOT persisted — the opener is a composable draft, not the brief's first touch.
+  // 8. The opener itself is NOT persisted — it's a composable draft, not the
+  // brief's first touch. The LANGUAGE choice IS sticky to the prospect, though:
+  // persist an explicit choice (or clear it on "Profile default").
+  if (overrideWrite !== undefined) {
+    await adminClient
+      .from('prospects')
+      .update({ output_language_override: overrideWrite })
+      .eq('id', prospect_id)
+  }
 
   // 9. Log cost
   const cost = calculateCost(MODEL, response.usage.input_tokens, response.usage.output_tokens)

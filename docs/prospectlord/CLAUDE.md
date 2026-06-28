@@ -232,6 +232,76 @@ await adminClient.from('api_usage').insert({ user_id, prospect_id, endpoint, mod
 
 `calculateCost` is in `lib/utils.ts`. Update pricing there when Anthropic changes rates.
 
+## Internationalization
+
+ProspectLord is multi-language, **profile-driven** (no URL-based locale routing).
+Everything reduces to two stored values:
+
+- **`rep_profiles.locale`** (BCP-47) — the rep's language. Drives the chrome **and**
+  the default language of all generated content. Set on `/setup`. Existing rows
+  default to `en-US`.
+- **`prospects.output_language_override`** (nullable BCP-47) — sticky per-prospect.
+  Applies **only to emails and pitches**. Falls back to `rep_profiles.locale` when null.
+
+### The audience principle (the rule that decides everything)
+
+Language is chosen by **who reads the output**, not by content type:
+
+| Surface | Audience | Language source |
+|---|---|---|
+| Chrome (buttons, tabs, sections, errors) | Rep | `profile.locale` |
+| Briefs, match reasons, DM rationale, update summaries | Rep | `profile.locale` (no override) |
+| Emails, pitches | Prospect | `prospect.output_language_override ?? profile.locale` |
+
+"Skin" refers to the **chrome only** — the static UI strings. Generated content is
+never a skin; it's produced fresh per request in the resolved language.
+
+### Supported languages (the 6)
+
+`en-US`, `en-GB`, `es`, `pt-BR`, `fr`, `de`. The override dropdown uses the same 6
+plus a **"Profile default"** sentinel (selecting it clears the override to null).
+The **en-US / en-GB split is real for generation**, not just chrome: an en-GB
+profile gets British spelling/idiom in briefs and emails.
+
+### Single source of truth
+
+The language list lives in **one module** (`apps/web/lib/i18n/languages.ts`):
+BCP-47 code → endonym label → prompt instruction string, plus the helpers
+`normalizeLocale`, `languageDirective`, `JSON_LANGUAGE_RULE`,
+`resolveProspectLanguage`, and the `PROFILE_DEFAULT` sentinel. The /setup selector,
+the compose dropdowns, and the generation directive all read from it. Adding a
+language is one entry here plus one catalog file — never a schema migration.
+
+### Chrome: next-intl, no routing
+
+- next-intl (v4) in **no-i18n-routing** mode — locale comes from the `NEXT_LOCALE`
+  cookie, **not** a `/[locale]/` path segment. URL routing would disturb the
+  `(app)` / `celord/` / `(territorylord)` route groups and the route-boundary import
+  rules. Keep it profile-driven.
+- The cookie **mirrors `rep_profiles.locale`**: `POST /api/profile/locale` writes
+  the column and sets the cookie together (used by the /setup selector); `proxy.ts`
+  backfills the cookie once for sessions that predate i18n. `apps/web/i18n/request.ts`
+  reads the cookie and **deep-merges en-US under the active locale**, so missing keys
+  fall back to en-US instead of blanking.
+- Provider (`NextIntlClientProvider`) sits at the **root layout**, covering the whole
+  platform. Untranslated apps (CELord, TerritoryLord) render their hardcoded English.
+- Catalogs live in `apps/web/messages/<code>.json`, base **en-US** (en-GB is its own
+  catalog). They're **translated at author-time** by `apps/web/scripts/translate-catalog.ts`
+  (runs en-US through Claude once per locale; output committed). Runtime is a
+  zero-cost static lookup. Server components use `getTranslations`; client components
+  use `useTranslations`; cost displays use `useFormatter` currency formatting.
+
+### Generation: language directive on every call
+
+Every ProspectLord Anthropic call appends `languageDirective(lang)`. Resolution is
+by route audience (table above). For **prospect-facing** routes (`refresh-email`,
+`pitch-opener`) the request may carry a `languageSelection` that is **written back**
+to `prospect.output_language_override` (sticky), or the `PROFILE_DEFAULT` sentinel
+which clears it; `resolveProspectLanguage()` centralizes this. **Structured (JSON)
+prompts** (research, check-updates, case-study matcher) also append `JSON_LANGUAGE_RULE`:
+keep JSON keys in English, translate only string values — otherwise parsing breaks.
+Case-study slides stay English (authored in English); only the match-reason chips localize.
+
 ## Design tokens
 
 All custom colors are CSS variables on `:root` in `app/globals.css`:
