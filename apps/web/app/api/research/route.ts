@@ -5,6 +5,7 @@ import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
+import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import type { DmRole, CompanyStats, ProductPromptContext } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -204,6 +205,8 @@ async function run(request: Request): Promise<Response> {
   const today  = new Date()
   const client = new Anthropic({ apiKey: userApiKey })
 
+  // Rep-facing output (the whole brief is read by the rep) → always profile.locale,
+  // never the per-prospect override. JSON rule keeps keys English so parsing holds.
   const systemPrompt = buildSystemPrompt(
     {
       products,
@@ -215,7 +218,7 @@ async function run(request: Request): Promise<Response> {
     },
     today.toISOString().split('T')[0],
     today.getMonth() + 1
-  )
+  ) + `\n\n${languageDirective(profile.locale)} ${JSON_LANGUAGE_RULE}`
 
   type AntMessage = Anthropic.MessageParam
   const messages: AntMessage[] = [

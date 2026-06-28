@@ -69,3 +69,41 @@ Items are roughly priority-ordered within each section.
 - [ ] Per-prospect history of which case studies were shared with which prospect
 - [ ] ZIP-of-PNGs import path (fallback if pdf2pic hits Vercel runtime issues)
 - [ ] Bulk CSV edit of case study library
+
+## 🌍 Internationalization — deferred by decision
+
+i18n shipped in v1.4.0 (ProspectLord-only, profile-driven, the 6 languages). These
+were deferred by explicit decision during that design session — not omissions.
+
+- [ ] **On-demand re-translation of generated rep content** — convert an
+  already-generated brief / match reason / summary into another language after the
+  fact (e.g. a rep wants a brief in English to forward to a colleague). Rep-facing
+  generation currently always follows `profile.locale` with no override.
+- [ ] **Decouple chrome language from generation language** — today `profile.locale`
+  drives both. The escape hatch is a second profile field (e.g. `generation_locale`)
+  that falls back to `locale` when null. Right for v1 to keep them fused; this is the
+  unlock when a rep wants an English UI with Portuguese output (or vice versa).
+- [ ] **Translate CELord / TerritoryLord chrome** — the provider already sits at the
+  root layout, so backfilling is just: extract those apps' strings into catalogs and
+  run the author-time translation script. No new infrastructure.
+- [ ] **Complete the ProspectLord chrome extraction sweep** — v1.4.0 extracted the
+  high-visibility chrome (platform-shared chrome, sidebar, jobs, setup, prospect
+  topbar + section scaffolding, the compose modals). Remaining brief sub-components
+  (DecisionMakers, NewsCard, TimingBar, StatCards, ProspectLog, UpdateBlurbs, the
+  topbar action buttons) still have hardcoded English — they fall back to en-US,
+  which is fine, but a sweep would fully localize the page.
+- [ ] **Languages beyond the 6** — Claude can generate far more at runtime, so if reps
+  need outbound copy in a language outside the skin set, add a curated list (~15–20) to
+  the generation dropdown **without** adding chrome catalogs. Generation list and chrome
+  list can diverge — both still read the shared lookup, but not every entry needs a catalog.
+- [ ] **Case-study slide localization** — the matcher pulls slides from the
+  English-authored Pentaho PDF. Match-reason chips localize; the slides stay English.
+  Localizing slides would mean maintaining per-language decks — deferred indefinitely.
+  Flagged so it isn't filed as a bug.
+- [ ] **RTL and CJK support** — the 6 launch languages are all left-to-right Latin
+  script. Arabic/Hebrew (RTL) and CJK need layout work (bidi, line-breaking, font
+  stacks) beyond catalog translation. Out of scope until requested.
+- [ ] **Locale-aware formatting audit** — v1.4.0 covers the jobs sidebar cost + the
+  sidebar monthly cost via next-intl currency formatting (job elapsed/runtime stays a
+  locale-neutral `m:ss` stopwatch). A later sweep should catch any remaining hardcoded
+  date/number/currency formatting across ProspectLord.

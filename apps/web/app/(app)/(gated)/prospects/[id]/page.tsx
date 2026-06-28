@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { getTranslations } from 'next-intl/server'
 import { notFound } from 'next/navigation'
 import TimingBar from '@/components/prospect/TimingBar'
 import StatCards from '@/components/prospect/StatCards'
@@ -19,6 +20,7 @@ import type { ProspectBrief, DecisionMaker, ProspectNote, ProspectUpdate } from 
 export default async function ProspectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+  const t = await getTranslations('Prospect')
 
   // Fetch all data in parallel
   const [prospectRes, briefRes, dmsRes, notesRes, updatesRes, caseStudyCountRes, productsRes] = await Promise.all([
@@ -63,7 +65,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           </div>
           {brief?.timing && (
             <div className="flex gap-2 text-[11px] mt-[2px]" style={{ color: 'var(--sl-text2)' }}>
-              <span>FY ends {brief.timing.fy_end}</span>
+              <span>{t('fyEnds', { date: brief.timing.fy_end })}</span>
               {brief.stats?.stage?.value && (
                 <>
                   <span style={{ color: 'var(--sl-border)' }}>·</span>
@@ -94,7 +96,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium"
               style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)', textDecoration: 'none' }}
             >
-              Export PDF
+              {t('exportPdf')}
             </a>
           )}
           {brief && (
@@ -108,10 +110,16 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               painSignals={brief.pain_signals ?? []}
               initiatives={brief.initiatives ?? []}
               news={brief.news ?? []}
+              outputLanguageOverride={prospect.output_language_override}
             />
           )}
           {brief?.email && (
-            <EmailDraftButton initialEmail={brief.email} prospectId={id} products={products} />
+            <EmailDraftButton
+              initialEmail={brief.email}
+              prospectId={id}
+              products={products}
+              outputLanguageOverride={prospect.output_language_override}
+            />
           )}
         </div>
       </div>
@@ -132,9 +140,9 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               className="rounded-[10px] px-6 py-8 text-center"
               style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)' }}
             >
-              <p className="text-[13px] font-medium" style={{ color: 'var(--sl-text)' }}>No research yet</p>
+              <p className="text-[13px] font-medium" style={{ color: 'var(--sl-text)' }}>{t('noResearchTitle')}</p>
               <p className="text-[12px] mt-1" style={{ color: 'var(--sl-text2)' }}>
-                Research may still be running, or it was interrupted. You can run it again below.
+                {t('noResearchBody')}
               </p>
               <ReresearchButton query={prospect.query} />
             </div>
@@ -151,7 +159,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
 
                 {/* Snapshot */}
                 {brief.snapshot && (
-                  <SCard title="Snapshot">
+                  <SCard title={t('snapshot')}>
                     <div className="px-[14px] py-[12px] flex flex-col gap-[10px]">
                       {brief.snapshot.split('\n\n').map((para, i) => (
                         <p key={i} className="text-[12px] leading-[1.7]" style={{ color: '#444' }}>{para}</p>
@@ -164,7 +172,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                 {((brief.initiatives?.length ?? 0) > 0 || (brief.pain_signals?.length ?? 0) > 0) && (
                   <div className="grid grid-cols-2 gap-[12px]">
                     {(brief.initiatives?.length ?? 0) > 0 && (
-                      <SCard title="Strategic initiatives">
+                      <SCard title={t('strategicInitiatives')}>
                         <div className="px-[14px] py-[8px]">
                           {brief.initiatives.map((item, i) => (
                             <div
@@ -183,7 +191,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                       </SCard>
                     )}
                     {(brief.pain_signals?.length ?? 0) > 0 && (
-                      <SCard title="Pain signals">
+                      <SCard title={t('painSignals')}>
                         <div className="px-[14px] py-[8px]">
                           {brief.pain_signals.map((item, i) => (
                             <div

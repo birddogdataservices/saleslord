@@ -45,6 +45,7 @@ export type RepProfile = {
   is_admin: boolean
   anthropic_api_key: string | null  // per-user BYOK — never sent to client as plaintext
   stripe_customer_id: string | null
+  locale: string                    // BCP-47 — drives chrome + default generation language
   updated_at: string
 }
 
@@ -56,6 +57,7 @@ export type Prospect = {
   created_at: string
   last_refreshed_at: string | null
   archived_at: string | null
+  output_language_override: string | null  // BCP-47, nullable — sticky email/pitch language; null = use profile locale
 }
 
 export type NewsItem = {

@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
+import { languageDirective, resolveProspectLanguage } from '@/lib/i18n/languages'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -42,9 +43,10 @@ async function run(request: Request): Promise<Response> {
   // from the daily call limit so reps can iterate freely without burning research budget.
 
   // 3. Parse body
-  const { prospect_id, product_id } = await request.json() as {
+  const { prospect_id, product_id, languageSelection } = await request.json() as {
     prospect_id?: string
-    product_id?: string   // optional — if provided, focus email on this product only
+    product_id?: string         // optional — if provided, focus email on this product only
+    languageSelection?: string  // optional — a supported code, or the "Profile default" sentinel
   }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
@@ -71,6 +73,14 @@ async function run(request: Request): Promise<Response> {
   const { active: activeProducts, focused } = resolveProducts(allProducts, product_id)
   const productsBlock = buildProductsBlock(activeProducts, focused)
 
+  // Prospect-facing (the email is read by the prospect) → an explicit selection
+  // wins and sticks; else the prospect's stored override; else the rep's locale.
+  const { lang, overrideWrite } = resolveProspectLanguage({
+    selection:      languageSelection,
+    storedOverride: prospect.output_language_override,
+    profileLocale:  profile?.locale,
+  })
+
   const systemPrompt = `You are a B2B sales email writer. Your only job is to write one cold outreach email.
 
 Rep context:
@@ -81,6 +91,8 @@ ${profile?.voice_samples
   : '- Voice samples: not provided. Write in a clear, direct, human voice.'}
 
 ${EMAIL_RULES}
+
+${languageDirective(lang)}
 
 Return ONLY valid JSON, no markdown, no preamble:
 {"subject": "string", "body": "string"}`
@@ -130,6 +142,15 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateCo
     .from('prospect_briefs')
     .update({ email })
     .eq('id', brief.id)
+
+  // Sticky language: persist an explicit choice (or clear it on "Profile default").
+  // undefined = no concrete selection → leave the column untouched.
+  if (overrideWrite !== undefined) {
+    await adminClient
+      .from('prospects')
+      .update({ output_language_override: overrideWrite })
+      .eq('id', prospect_id)
+  }
 
   // 9. Log cost
   const cost = calculateCost(MODEL, response.usage.input_tokens, response.usage.output_tokens)

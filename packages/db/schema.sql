@@ -20,6 +20,7 @@ create table rep_profiles (
   is_admin            boolean default false, -- grants access to /admin/* and product management
   anthropic_api_key   text,              -- per-user BYOK; required to run research/email — no platform fallback
   stripe_customer_id  text,              -- stubbed: populated when Stripe billing is wired
+  locale              text not null default 'en-US', -- BCP-47; drives chrome + default generation language (the 6 in lib/i18n/languages.ts)
   updated_at          timestamptz default now()
 );
 alter table rep_profiles enable row level security;
@@ -74,6 +75,7 @@ create table prospects (
   created_at       timestamptz default now(),
   last_refreshed_at timestamptz,
   archived_at      timestamptz,     -- null = active; set = archived (soft delete)
+  output_language_override text,    -- nullable BCP-47; sticky per-prospect, emails/pitches only; null = fall back to rep_profiles.locale
   unique (user_id, query)           -- required for ON CONFLICT upsert in research route
 );
 alter table prospects enable row level security;

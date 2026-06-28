@@ -4,9 +4,12 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Suspense, useState } from 'react'
 
 function LoginContent() {
+  const t            = useTranslations('Login')
+  const tc           = useTranslations('Common')
   const searchParams = useSearchParams()
   const error        = searchParams.get('error')
 
@@ -54,7 +57,7 @@ function LoginContent() {
         <div>
           <h1 className="text-[18px] font-semibold text-[var(--sl-text)]">SalesLord</h1>
           <p className="text-[12px] text-[var(--sl-text2)] mt-1">
-            Sign in to access your prospect intelligence.
+            {t('subtitle')}
           </p>
         </div>
 
@@ -64,8 +67,8 @@ function LoginContent() {
             style={{ background: 'var(--sl-coral-bg)', color: 'var(--sl-coral-t)' }}
           >
             {error === 'auth_failed'
-              ? 'Authentication failed. Please try again.'
-              : 'Access denied. Contact your admin to be added to the allowlist.'}
+              ? t('errorAuthFailed')
+              : t('errorAccessDenied')}
           </div>
         )}
 
@@ -75,12 +78,12 @@ function LoginContent() {
           style={{ background: 'var(--sl-text)', color: '#F0EDE6', border: 'none' }}
         >
           <GoogleIcon />
-          Sign in with Google
+          {t('signInWithGoogle')}
         </button>
 
         <div className="flex items-center gap-3">
           <div className="flex-1 h-px" style={{ background: 'var(--sl-border)' }} />
-          <span className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>or</span>
+          <span className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>{tc('or')}</span>
           <div className="flex-1 h-px" style={{ background: 'var(--sl-border)' }} />
         </div>
 
@@ -89,7 +92,7 @@ function LoginContent() {
             className="text-[12px] rounded-[6px] px-3 py-3 text-center"
             style={{ background: 'var(--sl-green-bg)', color: 'var(--sl-green-t)' }}
           >
-            Check your inbox — link sent to {email}
+            {t('magicLinkSent', { email })}
           </div>
         ) : (
           <form onSubmit={sendMagicLink} className="flex flex-col gap-2">
@@ -97,7 +100,7 @@ function LoginContent() {
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder={t('emailPlaceholder')}
               required
               className="rounded-[8px] px-3 py-[9px] text-[13px] outline-none w-full"
               style={{
@@ -112,13 +115,13 @@ function LoginContent() {
               className="rounded-[8px] py-[10px] px-4 text-[13px] font-medium transition-opacity hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'var(--sl-surface2)', color: 'var(--sl-text)', border: '1px solid var(--sl-border)' }}
             >
-              {sending ? 'Sending…' : 'Send magic link'}
+              {sending ? t('sending') : t('sendMagicLink')}
             </button>
           </form>
         )}
 
         <p className="text-[10px] text-center text-[var(--sl-text3)]">
-          Access is restricted. If you have trouble signing in,<br />contact your SalesLord admin.
+          {t('restrictedNote')}
         </p>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useTranslations, useFormatter } from 'next-intl'
 import { useRef, useState, useCallback } from 'react'
 import type { ProspectSidebarItem } from '@/lib/types'
 import { windowStatusColor } from '@/lib/utils'
@@ -15,17 +16,21 @@ type Props = {
   isAdmin: boolean
 }
 
-const GROUP_ORDER: Array<{ status: 'open' | 'approaching' | 'closed' | null; label: string }> = [
-  { status: 'open',        label: 'Window open' },
-  { status: 'approaching', label: 'Approaching' },
-  { status: 'closed',      label: 'Monitoring' },
+const GROUP_ORDER: Array<{ status: 'open' | 'approaching' | 'closed' | null; key: 'groupOpen' | 'groupApproaching' | 'groupMonitoring' }> = [
+  { status: 'open',        key: 'groupOpen' },
+  { status: 'approaching', key: 'groupApproaching' },
+  { status: 'closed',      key: 'groupMonitoring' },
 ]
+
+const USD = { style: 'currency', currency: 'USD' } as const
 
 const MIN_WIDTH = 180
 const MAX_WIDTH = 360
 const DEFAULT_WIDTH = 230
 
 export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, isAdmin }: Props) {
+  const t        = useTranslations('Sidebar')
+  const format   = useFormatter()
   const params    = useParams()
   const activeId  = params?.id as string | undefined
   const [search,         setSearch]         = useState('')
@@ -74,7 +79,7 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
           SalesLord
         </div>
         <div className="text-[11px] mt-[2px]" style={{ color: '#555' }}>
-          {prospects.length} prospect{prospects.length !== 1 ? 's' : ''} · {openCount} window{openCount !== 1 ? 's' : ''} open
+          {t('summary', { prospectCount: prospects.length, openCount })}
         </div>
       </div>
 
@@ -87,7 +92,7 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
       <input
         className="mx-[12px] mt-[10px] rounded-[6px] px-[10px] py-[6px] text-[12px] outline-none"
         style={{ background: '#242424', border: 'none', color: '#aaa' }}
-        placeholder="Filter prospects…"
+        placeholder={t('filterPlaceholder')}
         value={search}
         onChange={e => setSearch(e.target.value)}
       />
@@ -102,12 +107,12 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
         if (!items.length) return null
 
         return (
-          <div key={group.label}>
+          <div key={group.key}>
             <div
               className="text-[11px] font-semibold uppercase tracking-[0.08em] px-[14px] pt-[12px] pb-[5px]"
               style={{ color: '#484844' }}
             >
-              {group.label}
+              {t(group.key)}
             </div>
             {items.map(p => <ProspectLink key={p.id} p={p} isActive={p.id === activeId} />)}
           </div>
@@ -124,7 +129,7 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
             onMouseEnter={e => ((e.target as HTMLElement).style.color = '#888')}
             onMouseLeave={e => ((e.target as HTMLElement).style.color = '#484844')}
           >
-            {showArchived ? '▾' : '▸'} {archivedProspects.length} archived
+            {showArchived ? '▾' : '▸'} {t('archivedCount', { count: archivedProspects.length })}
           </button>
           {showArchived && filteredArchived.map(p => (
             <ProspectLink key={p.id} p={p} isActive={p.id === activeId} muted />
@@ -141,9 +146,9 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
       {/* Footer — cost badge + settings link */}
       <div className="px-[14px] py-[12px]" style={{ borderTop: '1px solid #2a2a2c' }}>
         <div className="text-[10px] mb-[8px]" style={{ color: '#484844' }}>
-          This month:{' '}
+          {t('thisMonth')}{' '}
           <span style={{ color: '#b8b6b0' }}>
-            {monthlyCostUsd < 0.01 ? '<$0.01' : `$${monthlyCostUsd.toFixed(2)}`}
+            {monthlyCostUsd < 0.01 ? `<${format.number(0.01, USD)}` : format.number(monthlyCostUsd, USD)}
           </span>
         </div>
         <Link
@@ -153,7 +158,7 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
           onMouseEnter={e => ((e.target as HTMLElement).style.color = '#b8b6b0')}
           onMouseLeave={e => ((e.target as HTMLElement).style.color = '#555')}
         >
-          Profile &amp; settings →
+          {t('profileSettings')}
         </Link>
         {isAdmin && (
           <>
@@ -164,7 +169,7 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
               onMouseEnter={e => ((e.target as HTMLElement).style.color = '#b8b6b0')}
               onMouseLeave={e => ((e.target as HTMLElement).style.color = '#555')}
             >
-              Manage team →
+              {t('manageTeam')}
             </Link>
             <Link
               href="/admin/case-studies"
@@ -173,7 +178,7 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
               onMouseEnter={e => ((e.target as HTMLElement).style.color = '#b8b6b0')}
               onMouseLeave={e => ((e.target as HTMLElement).style.color = '#555')}
             >
-              Case studies →
+              {t('caseStudies')}
             </Link>
           </>
         )}

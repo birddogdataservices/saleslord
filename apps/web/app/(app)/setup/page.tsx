@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/server'
+import { getTranslations } from 'next-intl/server'
 import { redirect } from 'next/navigation'
 import SetupForm from './SetupForm'
 import type { RepProfile, Product, TeamConfig } from '@/lib/types'
@@ -11,6 +12,8 @@ export default async function SetupPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+
+  const t = await getTranslations('Setup')
 
   const [{ data: profileRaw }, { data: products }, { data: teamConfigRaw }] = await Promise.all([
     supabase.from('rep_profiles').select('*').eq('user_id', user.id).single(),
@@ -30,10 +33,9 @@ export default async function SetupPage() {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-[18px] font-semibold text-[var(--sl-text)]">Profile &amp; settings</h1>
+          <h1 className="text-[18px] font-semibold text-[var(--sl-text)]">{t('title')}</h1>
           <p className="text-[12px] text-[var(--sl-text2)] mt-1">
-            This context is injected into every research and email generation call.
-            The more complete it is, the better the output.
+            {t('intro')}
           </p>
         </div>
 
