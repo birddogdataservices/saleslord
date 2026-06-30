@@ -1,6 +1,31 @@
 # ProspectLord — Handoff
 
-## Current version: v1.4.0 — i18n / multi-language
+## Current version: v1.4.1 — i18n / multi-language
+
+---
+
+## Session 12.1 hotfix (non-English JSON parse failure)
+
+**Symptom:** with a non-English `profile.locale`, research/email/pitch generation ran
+(burned credits) then failed with "Failed to parse AI response".
+
+**Cause:** the language directive ("Write all output in X. This applies to every part
+of your response.") induced the model to wrap the JSON in translated commentary. The
+naive `text.slice(indexOf('{'), lastIndexOf('}'))` parser then grabbed a `}` from a
+trailing translated remark, producing invalid JSON. English output had obeyed the
+"no trailing text" instruction, so it only surfaced once generation went multi-language.
+
+**Fix:**
+- `extractJsonObject()` in `lib/utils.ts` — returns the first **complete, balanced**
+  JSON object (string/escape-aware), tolerating leading/trailing prose (incl. braces)
+  and fences in any language. Now used by research, check-updates, case-studies/match,
+  refresh-email, pitch-opener (replaces the slice in each).
+- `JSON_LANGUAGE_RULE` (in `lib/i18n/languages.ts`) strengthened: output only the JSON
+  object with no commentary in any language; keep keys + fixed enum/code values English;
+  translate only free-text values; escape inner quotes. Now also applied to refresh-email
+  and pitch-opener (previously only the rep-facing JSON routes had it).
+- Verified `extractJsonObject` with a unit test covering the trailing-prose-with-brace
+  case. No schema change.
 
 ---
 

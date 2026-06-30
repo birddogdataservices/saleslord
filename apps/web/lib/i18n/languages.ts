@@ -57,10 +57,14 @@ export function languageDirective(code?: string | null): string {
   return `Write all output in ${instructionFor(code)}. This applies to every part of your response.`
 }
 
-// Extra rule for prompts that return JSON: translate the values, never the keys,
-// or downstream parsing breaks.
+// Extra rule for prompts that return JSON. The language directive tells the model
+// to "write all output" in the target language; for JSON that must NOT mean wrapping
+// the object in translated prose (which breaks parsing) or translating keys / fixed
+// enum values (which breaks downstream matching). This rule scopes it precisely.
 export const JSON_LANGUAGE_RULE =
-  'Keep all JSON keys exactly as written in English. Translate ONLY the human-readable string values, never the keys.'
+  'For the JSON: output ONLY the JSON object — no preamble, no explanation, no closing remarks, in any language. ' +
+  'Keep every JSON key exactly as written here in English, and keep any fixed enum/code values (not free text) in English. ' +
+  'Translate ONLY the free-text human-readable string values. Ensure the JSON is valid — escape any double quotes inside string values.'
 
 // Resolve the output language for a PROSPECT-FACING generation (emails, pitches)
 // from the audience principle: an explicit per-generation selection wins and is

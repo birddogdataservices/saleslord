@@ -11,10 +11,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost } from '@/lib/utils'
+import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { PITCH_OPENER_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
-import { languageDirective, resolveProspectLanguage } from '@/lib/i18n/languages'
+import { languageDirective, JSON_LANGUAGE_RULE, resolveProspectLanguage } from '@/lib/i18n/languages'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -90,6 +90,7 @@ ${profile?.voice_samples
 ${PITCH_OPENER_RULES}
 
 ${languageDirective(lang)}
+${JSON_LANGUAGE_RULE}
 
 Return ONLY valid JSON, no markdown, no preamble:
 {"paragraph": "string"}`
@@ -135,11 +136,9 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
   // 7. Parse JSON
   let paragraph: string
   try {
-    const raw   = textBlock.text
-    const start = raw.indexOf('{')
-    const end   = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('No JSON found')
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as { paragraph?: string }
+    const json = extractJsonObject(textBlock.text)
+    if (!json) throw new Error('No JSON found')
+    const parsed = JSON.parse(json) as { paragraph?: string }
     if (!parsed.paragraph?.trim()) throw new Error('No paragraph in response')
     paragraph = parsed.paragraph.trim()
   } catch {

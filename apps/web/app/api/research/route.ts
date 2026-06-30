@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost } from '@/lib/utils'
+import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
@@ -287,13 +287,12 @@ async function run(request: Request): Promise<Response> {
 
   let parsed: any
   try {
-    // Extract JSON robustly — slice from first { to last } to tolerate preambles,
-    // prose suffixes, and markdown fencing the model may add despite instructions.
-    const raw   = textBlock.text
-    const start = raw.indexOf('{')
-    const end   = raw.lastIndexOf('}')
-    if (start === -1 || end === -1 || end <= start) throw new Error('No JSON object found')
-    parsed = JSON.parse(raw.slice(start, end + 1))
+    // Extract the first complete, balanced JSON object — tolerates preambles,
+    // prose suffixes (incl. trailing commentary with braces), and markdown fencing
+    // the model may add, in any language.
+    const json = extractJsonObject(textBlock.text)
+    if (!json) throw new Error('No JSON object found')
+    parsed = JSON.parse(json)
   } catch {
     console.error('[research] Failed to parse AI JSON:', textBlock.text.slice(0, 500))
     return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })

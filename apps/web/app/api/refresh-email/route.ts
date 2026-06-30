@@ -6,10 +6,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost } from '@/lib/utils'
+import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
-import { languageDirective, resolveProspectLanguage } from '@/lib/i18n/languages'
+import { languageDirective, JSON_LANGUAGE_RULE, resolveProspectLanguage } from '@/lib/i18n/languages'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -93,6 +93,7 @@ ${profile?.voice_samples
 ${EMAIL_RULES}
 
 ${languageDirective(lang)}
+${JSON_LANGUAGE_RULE}
 
 Return ONLY valid JSON, no markdown, no preamble:
 {"subject": "string", "body": "string"}`
@@ -127,11 +128,9 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateCo
   // 7. Parse JSON
   let email: { subject: string; body: string }
   try {
-    const raw   = textBlock.text
-    const start = raw.indexOf('{')
-    const end   = raw.lastIndexOf('}')
-    if (start === -1 || end === -1) throw new Error('No JSON found')
-    email = JSON.parse(raw.slice(start, end + 1))
+    const json = extractJsonObject(textBlock.text)
+    if (!json) throw new Error('No JSON found')
+    email = JSON.parse(json)
   } catch {
     console.error('[refresh-email] Failed to parse JSON:', textBlock.text.slice(0, 300))
     return Response.json({ error: 'Failed to parse email response' }, { status: 500 })

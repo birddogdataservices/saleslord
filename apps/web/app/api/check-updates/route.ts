@@ -7,7 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost } from '@/lib/utils'
+import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -245,11 +245,9 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   // 8. Parse JSON
   let parsed: { found: boolean; summary?: string; news_items?: NewsItem[] }
   try {
-    const raw   = textBlock.text
-    const start = raw.indexOf('{')
-    const end   = raw.lastIndexOf('}')
-    if (start === -1 || end === -1 || end <= start) throw new Error('No JSON found')
-    parsed = JSON.parse(raw.slice(start, end + 1))
+    const json = extractJsonObject(textBlock.text)
+    if (!json) throw new Error('No JSON found')
+    parsed = JSON.parse(json)
   } catch {
     console.error('[check-updates] Failed to parse AI JSON:', textBlock.text.slice(0, 300))
     return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })
