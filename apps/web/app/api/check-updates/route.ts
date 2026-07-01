@@ -7,11 +7,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost, extractJsonObject } from '@/lib/utils'
+import { calculateCost } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
-import { reEmitAsStructuredJson } from '@/lib/structured-output'
+import { generateStructured } from '@/lib/structured-output'
 import type { ProductPromptContext, NewsItem } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -219,48 +219,29 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     totalOutputTokens += response.usage.output_tokens
   }
 
-  // Nudge if no JSON in response
-  let textBlock = response.content.find(b => b.type === 'text')
+  // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
+  // The web-search loop can't also be forced to emit a tool, so this dedicated call
+  // hands the model its own findings and has it return the result through emit_result
+  // (either {"found": false} or the full object). No text parsing, any language.
+  const findings = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n').trim()
 
-  if (!textBlock || !textBlock.text.includes('{')) {
-    messages.push({ role: 'assistant', content: response.content })
-    messages.push({
-      role: 'user',
-      content: 'Output the JSON object now. Begin with { and end with }. No other text.',
-    })
-    const jsonResponse = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
-    })
-    textBlock = jsonResponse.content.find(b => b.type === 'text')
-    totalInputTokens  += jsonResponse.usage.input_tokens
-    totalOutputTokens += jsonResponse.usage.output_tokens
-  }
-
-  if (!textBlock || textBlock.type !== 'text') {
-    return Response.json({ error: 'No text response from AI' }, { status: 500 })
-  }
-
-  // 8. Parse JSON
   let parsed: { found: boolean; summary?: string; news_items?: NewsItem[] }
   try {
-    const json = extractJsonObject(textBlock.text)
-    if (!json) throw new Error('No JSON found')
-    parsed = JSON.parse(json)
+    const structured = await generateStructured({
+      client, model: MODEL, system: systemPrompt,
+      messages: [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: findings || '(search complete)' },
+        { role: 'user', content: 'Now return the result exactly as specified above (either {"found": false} or the full object), by calling the emit_result tool.' },
+      ],
+      maxTokens: 1024,
+    })
+    parsed = structured.value as typeof parsed
+    totalInputTokens  += structured.inputTokens
+    totalOutputTokens += structured.outputTokens
   } catch {
-    // Fallback: re-emit via tool use (guaranteed-valid JSON) when multi-language
-    // text output is malformed.
-    try {
-      const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text, 1024)
-      parsed = r.value as typeof parsed
-      totalInputTokens  += r.inputTokens
-      totalOutputTokens += r.outputTokens
-    } catch {
-      console.error('[check-updates] Failed to parse AI JSON (incl. structured retry):', textBlock.text.slice(0, 300))
-      return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })
-    }
+    console.error('[check-updates] Structured generation failed')
+    return Response.json({ error: 'Failed to generate update' }, { status: 500 })
   }
 
   // 9. Log cost regardless of whether updates were found (we used compute either way)

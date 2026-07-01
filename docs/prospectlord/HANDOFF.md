@@ -1,6 +1,26 @@
 # ProspectLord — Handoff
 
-## Current version: v1.4.2 — i18n / multi-language
+## Current version: v1.4.3 — i18n / multi-language
+
+---
+
+## Session 12.3 (always-on structured output — remove text parsing)
+
+The v1.4.1/v1.4.2 work left a "usually parse text, sometimes fall back to tool use"
+split. Made structured output the **only** path, so there's one consistent, robust
+mechanism and no fragile text parsing anywhere.
+
+- `lib/structured-output.ts` → `generateStructured()` — forces an `emit_result` tool
+  call and returns the tool input (valid JSON by construction) + token usage.
+- **Single-call routes** (refresh-email, pitch-opener, case-studies/match): call it
+  directly — one call, always valid.
+- **Web-search routes** (research, check-updates): unchanged `web_search` loop, then a
+  second `generateStructured` call over the model's own findings (you can't force a tool
+  and let it search in the same call). Costs one extra call per run vs. the old happy
+  path — accepted for the guarantee + consistency; folded into `api_usage`.
+- Removed `extractJsonObject` (lib/utils.ts) and `reEmitAsStructuredJson` — no more text
+  parsing. Trimmed `JSON_LANGUAGE_RULE` to just the keys/enums-English scoping (validity
+  is now the API's job, not the prompt's). No schema change.
 
 ---
 

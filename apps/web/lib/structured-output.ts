@@ -1,23 +1,24 @@
-// Structured-output fallback for the generation routes.
+// Structured output for the generation routes.
 //
-// The routes ask Claude to return JSON as text and then parse it. That's fine for
-// English, but multi-language output makes malformed JSON far more likely — the
-// model wraps the object in translated prose, or (the real killer) emits an
-// unescaped " or a raw newline inside a translated string value, so JSON.parse
-// throws even after we've sliced out a balanced object.
+// Instead of asking Claude to hand-write JSON as text and then parsing it (fragile —
+// the model can wrap it in prose or, in non-English output, emit an unescaped quote
+// or newline inside a value), we get the result through TOOL USE. We force a call to
+// an `emit_result` tool; the Anthropic API serializes the tool input as JSON itself,
+// so the result is guaranteed to be valid JSON in any language. No text parsing.
 //
-// Rather than string-surgery the broken text (fragile), we let the model repair
-// its own answer through TOOL USE: a forced tool call whose input the API itself
-// serializes as JSON, so the result is guaranteed to be valid JSON. This runs
-// ONLY when the fast text-parse fails, so the happy path costs nothing extra.
+// - Single-call routes (email, pitch, case-study match): call generateStructured
+//   directly — one call, always valid.
+// - Web-search routes (research, check-updates): the search call can't ALSO be forced
+//   to emit a tool (forcing it would stop the model searching), so they run two phases —
+//   the existing web_search loop, then generateStructured over the model's own findings.
 //
 // Server-side only: imported by API route handlers.
 
 import type Anthropic from '@anthropic-ai/sdk'
 
 const EMIT_TOOL = {
-  name: 'emit_json',
-  description: 'Return the final result strictly as a JSON object.',
+  name: 'emit_result',
+  description: 'Return the final result strictly as a JSON object matching the requested shape.',
   input_schema: { type: 'object' as const, additionalProperties: true },
 }
 
@@ -27,32 +28,24 @@ export type StructuredResult = {
   outputTokens: number
 }
 
-// Re-emits `priorAttempt` (the model's own malformed text answer) as a validated
-// JSON object via a forced tool call. `system` is the route's original system
-// prompt, so the model keeps the same shape and the same language rules.
-export async function reEmitAsStructuredJson(
-  client: Anthropic,
-  model: string,
-  system: string,
-  priorAttempt: string,
-  maxTokens = 4096,
-): Promise<StructuredResult> {
-  const res = await client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system,
-    tools: [EMIT_TOOL] as any,
-    tool_choice: { type: 'tool', name: 'emit_json' } as any,
-    messages: [
-      { role: 'user', content: 'Produce the final result.' },
-      { role: 'assistant', content: priorAttempt || '(result follows)' },
-      {
-        role: 'user',
-        content:
-          'Return that exact result now by calling emit_json with the JSON object. ' +
-          'Keep every JSON key and any fixed enum/code values in English; keep the free-text values in the language you already wrote them in.',
-      },
-    ],
+// Forces a single structured-output call. `messages` is the full conversation;
+// `system` should describe the expected JSON shape (the tool schema is permissive,
+// so the shape comes from the prompt). Returns the tool input (guaranteed valid
+// JSON) plus token usage for cost tracking.
+export async function generateStructured(args: {
+  client: Anthropic
+  model: string
+  system: string
+  messages: Anthropic.MessageParam[]
+  maxTokens?: number
+}): Promise<StructuredResult> {
+  const res = await args.client.messages.create({
+    model:      args.model,
+    max_tokens: args.maxTokens ?? 4096,
+    system:     args.system,
+    tools:      [EMIT_TOOL] as any,
+    tool_choice: { type: 'tool', name: EMIT_TOOL.name } as any,
+    messages:   args.messages,
   })
 
   const toolUse = res.content.find(b => b.type === 'tool_use')
@@ -60,8 +53,8 @@ export async function reEmitAsStructuredJson(
     throw new Error('No structured tool output')
   }
   return {
-    value: toolUse.input,
-    inputTokens: res.usage.input_tokens,
+    value:        toolUse.input,
+    inputTokens:  res.usage.input_tokens,
     outputTokens: res.usage.output_tokens,
   }
 }

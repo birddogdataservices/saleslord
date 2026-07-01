@@ -1,12 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost, extractJsonObject } from '@/lib/utils'
+import { calculateCost } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
-import { reEmitAsStructuredJson } from '@/lib/structured-output'
+import { generateStructured } from '@/lib/structured-output'
 import type { DmRole, CompanyStats, ProductPromptContext } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -258,55 +258,30 @@ async function run(request: Request): Promise<Response> {
     totalOutputTokens += response.usage.output_tokens
   }
 
-  // 6. Extract and parse JSON.
-  // If the model produced a planning/summary message without JSON (common when it
-  // narrates its findings before outputting), nudge it with one tool-free follow-up
-  // so it can only output the JSON object and nothing else.
-  let textBlock = response.content.find(b => b.type === 'text')
-
-  if (!textBlock || !textBlock.text.includes('{')) {
-    messages.push({ role: 'assistant', content: response.content })
-    messages.push({
-      role: 'user',
-      content: 'Output the JSON object now. Begin with { and end with }. No other text.',
-    })
-    const jsonResponse = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: systemPrompt,
-      // No tools — we only want the JSON, no more searching
-      messages,
-    })
-    textBlock = jsonResponse.content.find(b => b.type === 'text')
-    totalInputTokens  += jsonResponse.usage.input_tokens
-    totalOutputTokens += jsonResponse.usage.output_tokens
-  }
-
-  if (!textBlock || textBlock.type !== 'text') {
-    return Response.json({ error: 'No text response from AI' }, { status: 500 })
-  }
+  // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
+  // The web-search loop above can't ALSO be forced to emit a tool (forcing it would
+  // stop the search), so this is a dedicated second call: hand the model its own
+  // gathered findings and have it return the brief through the emit_result tool,
+  // whose input the API serializes as valid JSON — no text parsing, any language.
+  const findings = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n').trim()
 
   let parsed: any
   try {
-    // Fast path: extract the first complete, balanced JSON object — tolerates
-    // preambles, prose suffixes (incl. trailing commentary with braces), and
-    // markdown fencing the model may add, in any language.
-    const json = extractJsonObject(textBlock.text)
-    if (!json) throw new Error('No JSON object found')
-    parsed = JSON.parse(json)
+    const structured = await generateStructured({
+      client, model: MODEL, system: systemPrompt,
+      messages: [
+        { role: 'user', content: `Research this company for my B2B sales pipeline: ${query.trim()}` },
+        { role: 'assistant', content: findings || '(research gathered)' },
+        { role: 'user', content: 'Now output the complete brief exactly as specified above, by calling the emit_result tool with the JSON object.' },
+      ],
+      maxTokens: 4096,
+    })
+    parsed = structured.value
+    totalInputTokens  += structured.inputTokens
+    totalOutputTokens += structured.outputTokens
   } catch {
-    // Fallback: multi-language output sometimes yields malformed JSON (unescaped
-    // quotes/newlines inside translated values). Have the model re-emit its own
-    // answer via tool use, which the API guarantees is valid JSON.
-    try {
-      const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text)
-      parsed = r.value
-      totalInputTokens  += r.inputTokens
-      totalOutputTokens += r.outputTokens
-    } catch {
-      console.error('[research] Failed to parse AI JSON (incl. structured retry):', textBlock.text.slice(0, 500))
-      return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })
-    }
+    console.error('[research] Structured brief generation failed')
+    return Response.json({ error: 'Failed to generate brief' }, { status: 500 })
   }
 
   // 7. Sort news descending (source of truth is DB order — never re-sort client-side)

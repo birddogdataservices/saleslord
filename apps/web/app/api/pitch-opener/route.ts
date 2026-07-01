@@ -11,11 +11,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost, extractJsonObject } from '@/lib/utils'
+import { calculateCost } from '@/lib/utils'
 import { PITCH_OPENER_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE, resolveProspectLanguage } from '@/lib/i18n/languages'
-import { reEmitAsStructuredJson } from '@/lib/structured-output'
+import { generateStructured } from '@/lib/structured-output'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -120,44 +120,25 @@ Grounding (do not introduce triggers not present above):
 Snapshot: ${brief.snapshot ?? 'not available'}
 Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
 
-  // 6. Generate — no tools, text only
-  const client   = new Anthropic({ apiKey: userApiKey })
-  const response = await client.messages.create({
-    model:      MODEL,
-    max_tokens: 400,
-    system:     systemPrompt,
-    messages:   [{ role: 'user', content: `Write the opener paragraph:\n\n${companyContext}` }],
-  })
-
-  const textBlock = response.content.find(b => b.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    return Response.json({ error: 'No response from AI' }, { status: 500 })
-  }
-
-  let inputTokens  = response.usage.input_tokens
-  let outputTokens = response.usage.output_tokens
-
-  // 7. Parse JSON
+  // 6. Generate the opener as guaranteed-valid JSON via tool use (no text parsing).
+  const client = new Anthropic({ apiKey: userApiKey })
   let paragraph: string
+  let inputTokens: number
+  let outputTokens: number
   try {
-    const json = extractJsonObject(textBlock.text)
-    if (!json) throw new Error('No JSON found')
-    const parsed = JSON.parse(json) as { paragraph?: string }
-    if (!parsed.paragraph?.trim()) throw new Error('No paragraph in response')
-    paragraph = parsed.paragraph.trim()
+    const r = await generateStructured({
+      client, model: MODEL, system: systemPrompt,
+      messages: [{ role: 'user', content: `Write the opener paragraph:\n\n${companyContext}` }],
+      maxTokens: 400,
+    })
+    const p = (r.value as { paragraph?: string }).paragraph?.trim()
+    if (!p) throw new Error('No paragraph in response')
+    paragraph    = p
+    inputTokens  = r.inputTokens
+    outputTokens = r.outputTokens
   } catch {
-    // Fallback: re-emit via tool use when multi-language output is malformed JSON.
-    try {
-      const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text, 400)
-      const p = (r.value as { paragraph?: string }).paragraph?.trim()
-      if (!p) throw new Error('No paragraph in structured response')
-      paragraph = p
-      inputTokens  += r.inputTokens
-      outputTokens += r.outputTokens
-    } catch {
-      console.error('[pitch-opener] Failed to parse JSON (incl. structured retry):', textBlock.text.slice(0, 300))
-      return Response.json({ error: 'Failed to parse opener response' }, { status: 500 })
-    }
+    console.error('[pitch-opener] Structured generation failed')
+    return Response.json({ error: 'Failed to generate opener' }, { status: 500 })
   }
 
   // 8. The opener itself is NOT persisted — it's a composable draft, not the

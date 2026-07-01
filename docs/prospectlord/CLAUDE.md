@@ -297,10 +297,19 @@ Every ProspectLord Anthropic call appends `languageDirective(lang)`. Resolution 
 by route audience (table above). For **prospect-facing** routes (`refresh-email`,
 `pitch-opener`) the request may carry a `languageSelection` that is **written back**
 to `prospect.output_language_override` (sticky), or the `PROFILE_DEFAULT` sentinel
-which clears it; `resolveProspectLanguage()` centralizes this. **Structured (JSON)
-prompts** (research, check-updates, case-study matcher) also append `JSON_LANGUAGE_RULE`:
-keep JSON keys in English, translate only string values — otherwise parsing breaks.
-Case-study slides stay English (authored in English); only the match-reason chips localize.
+which clears it; `resolveProspectLanguage()` centralizes this.
+
+**All JSON output is produced via tool use, not text parsing.** Every generation
+route gets its structured result from `generateStructured()` (`lib/structured-output.ts`),
+which forces an `emit_result` tool call — the API serializes the tool input as JSON, so
+it is valid in any language (this replaced fragile text parsing that broke on non-English
+output). Single-call routes (email, pitch, case-study match) call it directly. The
+**web-search routes** (research, check-updates) run two phases: the `web_search` loop
+can't also be forced to emit a tool, so they search first, then pass the model's own
+findings to `generateStructured` for the final object. `JSON_LANGUAGE_RULE` still rides
+along on structured prompts to keep **keys and fixed enum/code values in English** while
+translating only free-text values. Case-study slides stay English (authored in English);
+only the match-reason chips localize.
 
 ## Design tokens
 

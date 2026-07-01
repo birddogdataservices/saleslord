@@ -37,44 +37,6 @@ export function formatCost(usd: number): string {
 }
 
 // ─────────────────────────────────────────
-// Robust JSON extraction from an LLM text response
-// ─────────────────────────────────────────
-// Returns the first COMPLETE, balanced JSON object in `text` (or null if none).
-// Scans from the first '{' tracking brace depth while respecting string literals
-// and escapes, so it tolerates anything the model wraps around the object:
-// markdown fences, a leading preamble, and — crucially — trailing commentary that
-// itself contains braces. The old `slice(indexOf('{'), lastIndexOf('}'))` approach
-// broke exactly there: a translated closing remark with a '}' extended the slice
-// past the real object and JSON.parse threw. This surfaced once generation went
-// multi-language (the language directive invites such commentary).
-export function extractJsonObject(text: string | null | undefined): string | null {
-  if (!text) return null
-  const start = text.indexOf('{')
-  if (start === -1) return null
-
-  let depth = 0
-  let inString = false
-  let escaped = false
-
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i]
-    if (inString) {
-      if (escaped) escaped = false
-      else if (ch === '\\') escaped = true
-      else if (ch === '"') inString = false
-      continue
-    }
-    if (ch === '"') inString = true
-    else if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
-      if (depth === 0) return text.slice(start, i + 1)
-    }
-  }
-  return null // unbalanced — no complete object found
-}
-
-// ─────────────────────────────────────────
 // Decision maker role colors
 // ─────────────────────────────────────────
 export const ROLE_COLORS: Record<DmRole, { bg: string; text: string }> = {
