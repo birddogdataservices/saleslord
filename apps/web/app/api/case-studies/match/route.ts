@@ -10,6 +10,7 @@ import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
+import { reEmitAsStructuredJson } from '@/lib/structured-output'
 import type { CaseStudy, CaseStudyMatch } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -149,18 +150,39 @@ Order matches by relevance_score descending. No markdown, no preamble.`
   // Rep-facing: match-reason chips are read by the rep → profile.locale. Slides
   // stay English (authored in English). JSON rule keeps keys English so the merge
   // by case_study_id still resolves.
+  const systemPrompt = `You are matching B2B sales case studies to a prospect profile. Return JSON only.\n\n${languageDirective(profileRes.data?.locale)} ${JSON_LANGUAGE_RULE}`
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 1024,
-    system: `You are matching B2B sales case studies to a prospect profile. Return JSON only.\n\n${languageDirective(profileRes.data?.locale)} ${JSON_LANGUAGE_RULE}`,
+    system: systemPrompt,
     messages: [{ role: 'user', content: userMessage }],
   })
 
   const textBlock = response.content.find(b => b.type === 'text')
-  const totalInput  = response.usage.input_tokens
-  const totalOutput = response.usage.output_tokens
+  let totalInput  = response.usage.input_tokens
+  let totalOutput = response.usage.output_tokens
 
-  // 7. Log cost
+  // 7. Parse JSON — fast path, with a structured re-emit fallback for malformed
+  // multi-language JSON. (Cost is logged below regardless, since compute was used.)
+  let parsed: { matches: { case_study_id: string; relevance_score: number; match_reasons: string[] }[] } | null = null
+  if (textBlock && textBlock.type === 'text') {
+    try {
+      const json = extractJsonObject(textBlock.text)
+      if (!json) throw new Error('No JSON found')
+      parsed = JSON.parse(json)
+    } catch {
+      try {
+        const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text, 1024)
+        parsed = r.value
+        totalInput  += r.inputTokens
+        totalOutput += r.outputTokens
+      } catch {
+        console.error('[case-study-match] Failed to parse AI JSON (incl. structured retry):', textBlock.text.slice(0, 300))
+      }
+    }
+  }
+
+  // 8. Log cost (compute was spent regardless of parse outcome)
   const cost = calculateCost(MODEL, totalInput, totalOutput)
   await adminClient.from('api_usage').insert({
     user_id:       user.id,
@@ -172,19 +194,11 @@ Order matches by relevance_score descending. No markdown, no preamble.`
     cost_usd:      cost,
   })
 
-  if (!textBlock || textBlock.type !== 'text') {
-    return Response.json({ error: 'No response from AI' }, { status: 500 })
-  }
-
-  // 8. Parse JSON
-  let parsed: { matches: { case_study_id: string; relevance_score: number; match_reasons: string[] }[] }
-  try {
-    const json = extractJsonObject(textBlock.text)
-    if (!json) throw new Error('No JSON found')
-    parsed = JSON.parse(json)
-  } catch {
-    console.error('[case-study-match] Failed to parse AI JSON:', textBlock.text.slice(0, 300))
-    return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })
+  if (!parsed) {
+    return Response.json(
+      { error: !textBlock || textBlock.type !== 'text' ? 'No response from AI' : 'Failed to parse AI response' },
+      { status: 500 },
+    )
   }
 
   // 9. Merge match metadata with full case study records (which include slide_image_path)

@@ -124,7 +124,7 @@ at the repo root — Next.js looks for it relative to the app directory.
 
 Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v1.4.1** (i18n — robust JSON extraction fix for non-English generation)
+Current version: **v1.4.2** (i18n — tool-use structured-output fallback for non-English generation)
 
 Known gap: there is no v1.0.0 tag — the TerritoryLord session (documented as
 v1.0.0 in HANDOFF.md) was never tagged. Tags jump v0.9.0 → v1.1.0.

@@ -15,6 +15,7 @@ import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { PITCH_OPENER_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE, resolveProspectLanguage } from '@/lib/i18n/languages'
+import { reEmitAsStructuredJson } from '@/lib/structured-output'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -133,6 +134,9 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
     return Response.json({ error: 'No response from AI' }, { status: 500 })
   }
 
+  let inputTokens  = response.usage.input_tokens
+  let outputTokens = response.usage.output_tokens
+
   // 7. Parse JSON
   let paragraph: string
   try {
@@ -142,8 +146,18 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
     if (!parsed.paragraph?.trim()) throw new Error('No paragraph in response')
     paragraph = parsed.paragraph.trim()
   } catch {
-    console.error('[pitch-opener] Failed to parse JSON:', textBlock.text.slice(0, 300))
-    return Response.json({ error: 'Failed to parse opener response' }, { status: 500 })
+    // Fallback: re-emit via tool use when multi-language output is malformed JSON.
+    try {
+      const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text, 400)
+      const p = (r.value as { paragraph?: string }).paragraph?.trim()
+      if (!p) throw new Error('No paragraph in structured response')
+      paragraph = p
+      inputTokens  += r.inputTokens
+      outputTokens += r.outputTokens
+    } catch {
+      console.error('[pitch-opener] Failed to parse JSON (incl. structured retry):', textBlock.text.slice(0, 300))
+      return Response.json({ error: 'Failed to parse opener response' }, { status: 500 })
+    }
   }
 
   // 8. The opener itself is NOT persisted — it's a composable draft, not the
@@ -157,14 +171,14 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
   }
 
   // 9. Log cost
-  const cost = calculateCost(MODEL, response.usage.input_tokens, response.usage.output_tokens)
+  const cost = calculateCost(MODEL, inputTokens, outputTokens)
   await adminClient.from('api_usage').insert({
     user_id:       user.id,
     prospect_id,
     endpoint:      'pitch-opener',
     model:         MODEL,
-    input_tokens:  response.usage.input_tokens,
-    output_tokens: response.usage.output_tokens,
+    input_tokens:  inputTokens,
+    output_tokens: outputTokens,
     cost_usd:      cost,
   })
 

@@ -10,6 +10,7 @@ import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { EMAIL_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE, resolveProspectLanguage } from '@/lib/i18n/languages'
+import { reEmitAsStructuredJson } from '@/lib/structured-output'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -125,6 +126,9 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateCo
     return Response.json({ error: 'No response from AI' }, { status: 500 })
   }
 
+  let inputTokens  = response.usage.input_tokens
+  let outputTokens = response.usage.output_tokens
+
   // 7. Parse JSON
   let email: { subject: string; body: string }
   try {
@@ -132,8 +136,16 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateCo
     if (!json) throw new Error('No JSON found')
     email = JSON.parse(json)
   } catch {
-    console.error('[refresh-email] Failed to parse JSON:', textBlock.text.slice(0, 300))
-    return Response.json({ error: 'Failed to parse email response' }, { status: 500 })
+    // Fallback: re-emit via tool use when multi-language output is malformed JSON.
+    try {
+      const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text, 512)
+      email = r.value as typeof email
+      inputTokens  += r.inputTokens
+      outputTokens += r.outputTokens
+    } catch {
+      console.error('[refresh-email] Failed to parse JSON (incl. structured retry):', textBlock.text.slice(0, 300))
+      return Response.json({ error: 'Failed to parse email response' }, { status: 500 })
+    }
   }
 
   // 8. Update brief with new email
@@ -152,14 +164,14 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateCo
   }
 
   // 9. Log cost
-  const cost = calculateCost(MODEL, response.usage.input_tokens, response.usage.output_tokens)
+  const cost = calculateCost(MODEL, inputTokens, outputTokens)
   await adminClient.from('api_usage').insert({
     user_id:       user.id,
     prospect_id,
     endpoint:      'email',
     model:         MODEL,
-    input_tokens:  response.usage.input_tokens,
-    output_tokens: response.usage.output_tokens,
+    input_tokens:  inputTokens,
+    output_tokens: outputTokens,
     cost_usd:      cost,
   })
 

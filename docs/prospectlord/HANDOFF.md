@@ -1,6 +1,27 @@
 # ProspectLord — Handoff
 
-## Current version: v1.4.1 — i18n / multi-language
+## Current version: v1.4.2 — i18n / multi-language
+
+---
+
+## Session 12.2 hotfix (non-English JSON — structured-output fallback)
+
+**v1.4.1 was not enough.** The Vercel log showed the model prefixing Portuguese prose
++ a ```json fence (which `extractJsonObject` handles), but the object itself was
+**invalid JSON deeper down** — an unescaped `"`/newline inside a translated string
+value. No amount of string-slicing fixes text the model wrote wrong.
+
+**Canonical fix:** stop relying on the model hand-writing valid JSON as text. When the
+fast text-parse fails, force the model to re-emit its own answer via **tool use**
+(`lib/structured-output.ts` → `reEmitAsStructuredJson`): a forced `emit_json` tool call
+whose input the API serializes as JSON, so the result is **guaranteed valid** in any
+language. It runs ONLY on parse failure, so the happy path (English, and well-formed
+non-English) costs nothing extra; the fallback adds one cheap call and its tokens are
+folded into `api_usage`.
+
+Wired into all five generation routes (research, check-updates, case-studies/match,
+refresh-email, pitch-opener). `extractJsonObject` (v1.4.1) stays as the fast path. No
+schema change.
 
 ---
 

@@ -11,6 +11,7 @@ import { calculateCost, extractJsonObject } from '@/lib/utils'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
+import { reEmitAsStructuredJson } from '@/lib/structured-output'
 import type { ProductPromptContext, NewsItem } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -249,8 +250,17 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     if (!json) throw new Error('No JSON found')
     parsed = JSON.parse(json)
   } catch {
-    console.error('[check-updates] Failed to parse AI JSON:', textBlock.text.slice(0, 300))
-    return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })
+    // Fallback: re-emit via tool use (guaranteed-valid JSON) when multi-language
+    // text output is malformed.
+    try {
+      const r = await reEmitAsStructuredJson(client, MODEL, systemPrompt, textBlock.text, 1024)
+      parsed = r.value as typeof parsed
+      totalInputTokens  += r.inputTokens
+      totalOutputTokens += r.outputTokens
+    } catch {
+      console.error('[check-updates] Failed to parse AI JSON (incl. structured retry):', textBlock.text.slice(0, 300))
+      return Response.json({ error: 'Failed to parse AI response' }, { status: 500 })
+    }
   }
 
   // 9. Log cost regardless of whether updates were found (we used compute either way)
