@@ -6,6 +6,7 @@ import {
   StyleSheet,
 } from '@react-pdf/renderer'
 import type { ProspectBrief, DecisionMaker } from '@/lib/types'
+import { computeWindowStatus } from '@/lib/utils'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -115,7 +116,10 @@ type Props = {
 
 export function BriefPdf({ prospectName, brief, dms, exportedAt }: Props) {
   const { timing, stats, snapshot, initiatives, pain_signals, news, outreach_angle, tech_signals, email } = brief
-  const tp = timingPillStyle(timing?.window_status ?? null)
+  // Derive the window live from fy_end rather than reading brief.timing.window_status,
+  // which is whatever the model decided on research day and goes stale. Reading the
+  // stored value made the exported PDF disagree with the timing bar on screen.
+  const tp = timingPillStyle(timing?.fy_end ? computeWindowStatus(timing.fy_end) : null)
 
   return (
     <Document

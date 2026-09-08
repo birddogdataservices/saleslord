@@ -11,7 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost } from '@/lib/utils'
+import { logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { PITCH_OPENER_RULES } from '@/lib/prompts'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE, resolveProspectLanguage } from '@/lib/i18n/languages'
@@ -45,7 +45,9 @@ async function run(request: Request): Promise<Response> {
 
   const adminClient = createAdminClient()
 
-  // 2. No rate limit check — same rationale as email refresh (Haiku, cheap, iterative).
+  // 2. No rate limit check — same rationale as email refresh (Haiku, cheap,
+  // iterative). Enforced by METERED_ENDPOINTS in lib/api-usage.ts: the row is
+  // written to the cost ledger but not counted against the daily budget.
 
   // 3. Parse body
   const { prospect_id, product_id, persona, compelling_event, languageSelection } = await request.json() as {
@@ -151,16 +153,14 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
       .eq('id', prospect_id)
   }
 
-  // 9. Log cost
-  const cost = calculateCost(MODEL, inputTokens, outputTokens)
-  await adminClient.from('api_usage').insert({
-    user_id:       user.id,
-    prospect_id,
-    endpoint:      'pitch-opener',
-    model:         MODEL,
-    input_tokens:  inputTokens,
-    output_tokens: outputTokens,
-    cost_usd:      cost,
+  // 9. Log cost (ledger only — this endpoint is not metered)
+  const cost = await logUsage(adminClient, {
+    userId:       user.id,
+    prospectId:   prospect_id,
+    endpoint:     USAGE_ENDPOINT.PITCH_OPENER,
+    model:        MODEL,
+    inputTokens,
+    outputTokens,
   })
 
   return Response.json({ paragraph, cost_usd: cost })

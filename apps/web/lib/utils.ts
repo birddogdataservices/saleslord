@@ -7,6 +7,19 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // ─────────────────────────────────────────
+// Email validation
+// ─────────────────────────────────────────
+// Deliberately permissive — the goal is catching typos and garbage before we
+// write them to the allowlist and fire mail at them, not implementing RFC 5322.
+// The matching CHECK constraint on allowed_emails.email uses the same shape.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+export function isValidEmail(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.length <= 254 && EMAIL_RE.test(trimmed)
+}
+
+// ─────────────────────────────────────────
 // Anthropic pricing — update when model pricing changes
 // Prices in USD per token
 // ─────────────────────────────────────────
@@ -26,8 +39,26 @@ const PRICING: Record<string, { input: number; output: number }> = {
   },
 }
 
+// Pricing is per model family, but callers sometimes pass a dated snapshot ID
+// (e.g. 'claude-haiku-4-5-20251001'). Strip a trailing -YYYYMMDD so every
+// snapshot resolves to its family's rate. Without this, dated IDs missed the
+// map entirely and fell through to the fallback below — logging Haiku calls at
+// Sonnet prices, ~3x the real cost.
+function normalizeModelId(model: string): string {
+  return model.replace(/-\d{8}$/, '')
+}
+
+// Most expensive known model — an unknown ID should over-report, never
+// under-report, so cost surprises surface instead of hiding.
+const FALLBACK_MODEL = 'claude-sonnet-4-6'
+
 export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const prices = PRICING[model] ?? PRICING['claude-sonnet-4-6']
+  const prices = PRICING[normalizeModelId(model)]
+  if (!prices) {
+    console.warn(`[calculateCost] Unknown model "${model}" — billing at ${FALLBACK_MODEL} rates. Add it to PRICING.`)
+    const fallback = PRICING[FALLBACK_MODEL]
+    return fallback.input * inputTokens + fallback.output * outputTokens
+  }
   return prices.input * inputTokens + prices.output * outputTokens
 }
 
@@ -71,7 +102,7 @@ export function computeWindowStatus(fyEnd: string): 'open' | 'approaching' | 'cl
   try {
     const now  = new Date()
     const year = now.getFullYear()
-    let target = new Date(`${fyEnd} ${year}`)
+    const target = new Date(`${fyEnd} ${year}`)
     if (isNaN(target.getTime())) return 'closed'
     if (target <= now) target.setFullYear(year + 1)
     const days = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))

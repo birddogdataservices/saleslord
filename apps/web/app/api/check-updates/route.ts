@@ -7,7 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
-import { calculateCost } from '@/lib/utils'
+import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -86,16 +86,9 @@ async function run(request: Request): Promise<Response> {
 
   const adminClient = createAdminClient()
 
-  // 2. Rate limit — shared 24h bucket across all endpoints
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const { count } = await adminClient
-    .from('api_usage').select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id).gte('created_at', since)
-
-  const limit = Number(process.env.DAILY_CALL_LIMIT ?? '25')
-  if ((count ?? 0) >= limit) {
-    return Response.json({ error: 'Daily limit reached. Resets in 24 hours.' }, { status: 429 })
-  }
+  // 2. Rate limit — shared 24h bucket across the metered endpoints
+  const limit = await checkDailyLimit(adminClient, user.id)
+  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 
   // 3. Parse body
   const { prospect_id } = await request.json() as { prospect_id?: string }
@@ -245,15 +238,13 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   }
 
   // 9. Log cost regardless of whether updates were found (we used compute either way)
-  const cost = calculateCost(MODEL, totalInputTokens, totalOutputTokens)
-  await adminClient.from('api_usage').insert({
-    user_id:       user.id,
-    prospect_id,
-    endpoint:      'check-updates',
-    model:         MODEL,
-    input_tokens:  totalInputTokens,
-    output_tokens: totalOutputTokens,
-    cost_usd:      cost,
+  const cost = await logUsage(adminClient, {
+    userId:       user.id,
+    prospectId:   prospect_id,
+    endpoint:     USAGE_ENDPOINT.CHECK_UPDATES,
+    model:        MODEL,
+    inputTokens:  totalInputTokens,
+    outputTokens: totalOutputTokens,
   })
 
   // 10. If no relevant updates, return early — no blurb written

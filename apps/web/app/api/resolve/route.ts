@@ -2,9 +2,12 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { decryptApiKey } from '@/lib/crypto'
+import { logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import type { OrgCandidate } from '@/lib/types'
 
-const MODEL = 'claude-haiku-4-5-20251001'
+// Undated ID, matching the other ProspectLord routes. calculateCost normalizes
+// dated snapshots anyway, but there is no reason to pin a snapshot here.
+const MODEL = 'claude-haiku-4-5'
 
 // Territory boost added to confidence score for candidates whose HQ is in the
 // rep's territory. Enough to float a territory match above a same-confidence
@@ -94,6 +97,17 @@ export async function POST(request: Request) {
     messages: [
       { role: 'user', content: `Identify organizations matching: ${query.trim()}` },
     ],
+  })
+
+  // Log cost before any downstream bail-out — the compute was spent either way.
+  // Not metered (see METERED_ENDPOINTS): this fires on every prospect add, and
+  // charging a rep's daily budget for typing a company name would be wrong.
+  await logUsage(adminClient, {
+    userId:       user.id,
+    endpoint:     USAGE_ENDPOINT.RESOLVE,
+    model:        MODEL,
+    inputTokens:  response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
   })
 
   const textBlock = response.content.find(b => b.type === 'text')
