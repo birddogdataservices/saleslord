@@ -6,7 +6,14 @@ import {
   StyleSheet,
 } from '@react-pdf/renderer'
 import type { ProspectBrief, DecisionMaker } from '@/lib/types'
-import { computeWindowStatus } from '@/lib/utils'
+import {
+  computeWindowStatus,
+  ROLE_COLORS,
+  TIER_COLORS,
+  TIER_LABELS,
+  tierOf,
+  sortByTier,
+} from '@/lib/utils'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Styles
@@ -70,8 +77,10 @@ const s = StyleSheet.create({
   dmInitials: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
   dmName:     { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.text },
   dmTitle:    { fontSize: 8, color: C.text2 },
-  dmRolePill: { borderRadius: 3, paddingHorizontal: 5, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 5 },
+  dmPillRow:  { flexDirection: 'row', gap: 4, marginBottom: 5 },
+  dmRolePill: { borderRadius: 3, paddingHorizontal: 5, paddingVertical: 2, alignSelf: 'flex-start' },
   dmRoleText: { fontSize: 7, fontFamily: 'Helvetica-Bold' },
+  dmTierWhy:  { fontSize: 7, color: C.text2, marginTop: -2, marginBottom: 5 },
   dmFieldLbl: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: C.text3, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 4, marginBottom: 2 },
   dmFieldVal: { fontSize: 8, color: C.text, lineHeight: 1.5 },
   // Email
@@ -89,14 +98,10 @@ const s = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
-  champion:       { bg: C.greenBg,  text: C.green },
-  economic_buyer: { bg: C.blueBg,   text: C.blue  },
-  gatekeeper:     { bg: C.coralBg,  text: C.coral },
-  end_user:       { bg: '#EEEDFE',  text: '#3C3489' },
-  influencer:     { bg: C.amberBg,  text: C.amber },
-  custom:         { bg: '#F0EEE9',  text: '#6B6A64' },
-}
+// ROLE_COLORS comes from lib/utils — it was duplicated here, and had already
+// drifted: gatekeeper text and influencer background differed from the screen,
+// so a printed brief coloured two of the six roles differently than the page it
+// was exported from. utils' values are literal hex, so they render here fine.
 
 function timingPillStyle(status: string | null) {
   if (status === 'open')       return { bg: C.greenBg, text: C.green,  label: 'Window open' }
@@ -120,6 +125,9 @@ export function BriefPdf({ prospectName, brief, dms, exportedAt }: Props) {
   // which is whatever the model decided on research day and goes stale. Reading the
   // stored value made the exported PDF disagree with the timing bar on screen.
   const tp = timingPillStyle(timing?.fy_end ? computeWindowStatus(timing.fy_end) : null)
+  // Same ordering the on-screen list uses — the export route queries by
+  // sort_order alone, which listed people in a different order than the screen.
+  const sortedDms = sortByTier(dms)
 
   return (
     <Document
@@ -252,10 +260,12 @@ export function BriefPdf({ prospectName, brief, dms, exportedAt }: Props) {
           <View style={[s.card, { marginBottom: 10 }]}>
             <View style={s.cardHead}><Text style={s.cardLabel}>Decision makers</Text></View>
             <View style={[s.cardBody, { paddingTop: 8 }]}>
-              {dms.map((dm, i) => {
+              {sortedDms.map((dm, i) => {
                 const roleColors = ROLE_COLORS[dm.role] ?? ROLE_COLORS.custom
+                const tier       = tierOf(dm)
+                const tierColors = TIER_COLORS[tier]
                 return (
-                  <View key={i} style={[s.dmCard, i === dms.length - 1 ? { marginBottom: 0 } : {}]}>
+                  <View key={i} style={[s.dmCard, i === sortedDms.length - 1 ? { marginBottom: 0 } : {}]}>
                     <View style={s.dmHeader}>
                       <View style={[s.dmAvatar, { backgroundColor: dm.avatar_color_bg }]}>
                         <Text style={[s.dmInitials, { color: dm.avatar_color_text }]}>{dm.avatar_initials}</Text>
@@ -265,9 +275,17 @@ export function BriefPdf({ prospectName, brief, dms, exportedAt }: Props) {
                         <Text style={s.dmTitle}>{dm.title}</Text>
                       </View>
                     </View>
-                    <View style={[s.dmRolePill, { backgroundColor: roleColors.bg }]}>
-                      <Text style={[s.dmRoleText, { color: roleColors.text }]}>{dm.role_label}</Text>
+                    <View style={s.dmPillRow}>
+                      <View style={[s.dmRolePill, { backgroundColor: roleColors.bg }]}>
+                        <Text style={[s.dmRoleText, { color: roleColors.text }]}>{dm.role_label}</Text>
+                      </View>
+                      <View style={[s.dmRolePill, { backgroundColor: tierColors.bg }]}>
+                        <Text style={[s.dmRoleText, { color: tierColors.text }]}>{TIER_LABELS[tier]}</Text>
+                      </View>
                     </View>
+                    {dm.tier_reasoning && (
+                      <Text style={s.dmTierWhy}>{dm.tier_reasoning}</Text>
+                    )}
                     {dm.cares_about && (
                       <>
                         <Text style={s.dmFieldLbl}>Cares about</Text>
