@@ -90,16 +90,28 @@ export async function logUsage(
     model: string
     inputTokens: number
     outputTokens: number
+    // Prompt-caching totals from usage.cache_read_input_tokens /
+    // cache_creation_input_tokens. Omit on routes that don't cache.
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
   },
 ): Promise<number> {
-  const cost = calculateCost(args.model, args.inputTokens, args.outputTokens)
+  const cacheRead  = args.cacheReadTokens  ?? 0
+  const cacheWrite = args.cacheWriteTokens ?? 0
+
+  const cost = calculateCost(
+    args.model, args.inputTokens, args.outputTokens, cacheRead, cacheWrite,
+  )
 
   await adminClient.from('api_usage').insert({
     user_id:       args.userId,
     prospect_id:   args.prospectId ?? null,
     endpoint:      args.endpoint,
     model:         args.model,
-    input_tokens:  args.inputTokens,
+    // Total input tokens processed, cached and uncached. api_usage has no
+    // separate cache columns; cost_usd already prices each portion correctly,
+    // so this column stays a volume figure rather than a billing one.
+    input_tokens:  args.inputTokens + cacheRead + cacheWrite,
     output_tokens: args.outputTokens,
     cost_usd:      cost,
   })

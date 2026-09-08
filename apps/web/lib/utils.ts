@@ -28,6 +28,13 @@ const PRICING: Record<string, { input: number; output: number }> = {
     input:  3.00 / 1_000_000,
     output: 15.00 / 1_000_000,
   },
+  // Not yet used by any route — listed so that switching a route's MODEL is a
+  // one-word change that prices correctly, instead of silently falling through
+  // to the fallback below and over-reporting by 50%.
+  'claude-sonnet-5': {
+    input:  2.00 / 1_000_000,
+    output: 10.00 / 1_000_000,
+  },
   'claude-haiku-4-5': {
     input:  1.00 / 1_000_000,
     output: 5.00 / 1_000_000,
@@ -52,14 +59,33 @@ function normalizeModelId(model: string): string {
 // under-report, so cost surprises surface instead of hiding.
 const FALLBACK_MODEL = 'claude-sonnet-4-6'
 
-export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const prices = PRICING[normalizeModelId(model)]
+// Prompt-caching multipliers against the model's base input rate. Writing a
+// 5-minute ephemeral cache entry costs a premium; reading one is nearly free.
+const CACHE_WRITE_MULTIPLIER = 1.25
+const CACHE_READ_MULTIPLIER  = 0.10
+
+// inputTokens is the uncached input only — usage.input_tokens already excludes
+// whatever was served from or written to cache, so the three are added
+// separately at their own rates. Cache args default to 0, so uncached callers
+// are unaffected.
+export function calculateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens  = 0,
+  cacheWriteTokens = 0,
+): number {
+  let prices = PRICING[normalizeModelId(model)]
   if (!prices) {
     console.warn(`[calculateCost] Unknown model "${model}" — billing at ${FALLBACK_MODEL} rates. Add it to PRICING.`)
-    const fallback = PRICING[FALLBACK_MODEL]
-    return fallback.input * inputTokens + fallback.output * outputTokens
+    prices = PRICING[FALLBACK_MODEL]
   }
-  return prices.input * inputTokens + prices.output * outputTokens
+  return (
+    prices.input  * inputTokens +
+    prices.output * outputTokens +
+    prices.input  * CACHE_READ_MULTIPLIER  * cacheReadTokens +
+    prices.input  * CACHE_WRITE_MULTIPLIER * cacheWriteTokens
+  )
 }
 
 export function formatCost(usd: number): string {

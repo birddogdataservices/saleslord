@@ -218,15 +218,24 @@ async function run(request: Request): Promise<Response> {
     { role: 'user', content: `Research this company for my B2B sales pipeline: ${query.trim()}` }
   ]
 
+  // Top-level cache_control marks the last cacheable block automatically, so the
+  // prefix — system prompt, then the accumulated search findings — is cached and
+  // re-read at ~0.1x on every continuation below. Without it each continuation
+  // resends the whole growing conversation at full price, and there can be seven
+  // of them. The same system prompt also feeds the phase-2 emit call, so that
+  // reads from this cache too.
   let response = await client.messages.create({
     model: MODEL,
     max_tokens: 4096,
     system: systemPrompt,
+    cache_control: { type: 'ephemeral' },
     tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
   let totalOutputTokens = response.usage.output_tokens
+  let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
+  let cacheWriteTokens  = response.usage.cache_creation_input_tokens ?? 0
 
   // web_search is a SERVER-side tool — searches execute inside a single API
   // call, so stop_reason is never 'tool_use'. When the server-side loop hits
@@ -243,11 +252,14 @@ async function run(request: Request): Promise<Response> {
       model: MODEL,
       max_tokens: 4096,
       system: systemPrompt,
+      cache_control: { type: 'ephemeral' },
       tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens
     totalOutputTokens += response.usage.output_tokens
+    cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
+    cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
   }
 
   // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
@@ -267,10 +279,13 @@ async function run(request: Request): Promise<Response> {
         { role: 'user', content: 'Now output the complete brief exactly as specified above, by calling the emit_result tool with the JSON object.' },
       ],
       maxTokens: 4096,
+      cache: true,   // same system prompt as the search loop — reads its cache
     })
     parsed = structured.value
     totalInputTokens  += structured.inputTokens
     totalOutputTokens += structured.outputTokens
+    cacheReadTokens   += structured.cacheReadTokens
+    cacheWriteTokens  += structured.cacheWriteTokens
   } catch {
     console.error('[research] Structured brief generation failed')
     return Response.json({ error: 'Failed to generate brief' }, { status: 500 })
@@ -391,6 +406,8 @@ async function run(request: Request): Promise<Response> {
     model:        MODEL,
     inputTokens:  totalInputTokens,
     outputTokens: totalOutputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
   })
 
   // 10. Return

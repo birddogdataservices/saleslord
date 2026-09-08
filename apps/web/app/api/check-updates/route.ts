@@ -182,15 +182,20 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   type AntMessage = Anthropic.MessageParam
   const messages: AntMessage[] = [{ role: 'user', content: userMessage }]
 
+  // Top-level cache_control caches the prefix so each continuation, and the
+  // phase-2 emit call below, re-read it at ~0.1x instead of full price.
   let response = await client.messages.create({
     model: MODEL,
     max_tokens: 1024,
     system: systemPrompt,
+    cache_control: { type: 'ephemeral' },
     tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
   let totalOutputTokens = response.usage.output_tokens
+  let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
+  let cacheWriteTokens  = response.usage.cache_creation_input_tokens ?? 0
 
   // web_search is a SERVER-side tool — searches execute inside a single API
   // call, so stop_reason is never 'tool_use'. 'pause_turn' means the server-side
@@ -205,11 +210,14 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
       model: MODEL,
       max_tokens: 1024,
       system: systemPrompt,
+      cache_control: { type: 'ephemeral' },
       tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens
     totalOutputTokens += response.usage.output_tokens
+    cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
+    cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
   }
 
   // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
@@ -228,10 +236,13 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
         { role: 'user', content: 'Now return the result exactly as specified above (either {"found": false} or the full object), by calling the emit_result tool.' },
       ],
       maxTokens: 1024,
+      cache: true,   // same system prompt as the search loop — reads its cache
     })
     parsed = structured.value as typeof parsed
     totalInputTokens  += structured.inputTokens
     totalOutputTokens += structured.outputTokens
+    cacheReadTokens   += structured.cacheReadTokens
+    cacheWriteTokens  += structured.cacheWriteTokens
   } catch {
     console.error('[check-updates] Structured generation failed')
     return Response.json({ error: 'Failed to generate update' }, { status: 500 })
@@ -245,6 +256,8 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     model:        MODEL,
     inputTokens:  totalInputTokens,
     outputTokens: totalOutputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
   })
 
   // 10. If no relevant updates, return early — no blurb written
