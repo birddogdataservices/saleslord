@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
+import { webSearchTool, CHECK_UPDATES_MAX_USES } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -46,6 +47,14 @@ Relevance criteria (all must apply):
 - The event happened after the last-checked date
 - It is not already in the existing news list (check URLs and event descriptions)
 - It is directly relevant to the rep's product and ICP — leadership changes, funding rounds, layoffs, new product launches, earnings reports, regulatory changes, or major partnerships
+
+Source and citation rules:
+- This summary is spoken aloud in sales conversations. A wrong item costs the rep credibility; returning {"found": false} costs nothing. When those trade off, return found: false.
+- Every item MUST link to the specific article or press release you retrieved — a URL that opens directly onto that story.
+- NEVER cite a section index, a paginated listing, a newsroom or blog landing page, a search-results page, or a site's home page. If you cannot produce a direct link to the specific item, omit the item.
+- Never construct, guess at, or pattern-match a URL. Use only URLs returned by search.
+- Two items must never share a URL.
+- Do not pad. One well-sourced development is a better answer than three thin ones.
 
 If no relevant new developments are found, return exactly: {"found": false}
 
@@ -189,7 +198,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     max_tokens: 1024,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+    tools: [webSearchTool(CHECK_UPDATES_MAX_USES)] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
@@ -211,7 +220,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
       max_tokens: 1024,
       system: systemPrompt,
       cache_control: { type: 'ephemeral' },
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+      tools: [webSearchTool(CHECK_UPDATES_MAX_USES)] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens
@@ -235,7 +244,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
         { role: 'assistant', content: findings || '(search complete)' },
         { role: 'user', content: 'Now return the result exactly as specified above (either {"found": false} or the full object), by calling the emit_result tool.' },
       ],
-      maxTokens: 1024,
+      maxTokens: 2048,
       cache: true,   // same system prompt as the search loop — reads its cache
     })
     parsed = structured.value as typeof parsed

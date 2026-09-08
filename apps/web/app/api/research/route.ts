@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildSystemPrompt } from '@/lib/research-prompt'
+import { webSearchTool, RESEARCH_MAX_USES } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -111,7 +112,7 @@ async function run(request: Request): Promise<Response> {
     max_tokens: 4096,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+    tools: [webSearchTool(RESEARCH_MAX_USES)] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
@@ -135,7 +136,7 @@ async function run(request: Request): Promise<Response> {
       max_tokens: 4096,
       system: systemPrompt,
       cache_control: { type: 'ephemeral' },
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+      tools: [webSearchTool(RESEARCH_MAX_USES)] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens
@@ -160,7 +161,7 @@ async function run(request: Request): Promise<Response> {
         { role: 'assistant', content: findings || '(research gathered)' },
         { role: 'user', content: 'Now output the complete brief exactly as specified above, by calling the emit_result tool with the JSON object.' },
       ],
-      maxTokens: 4096,
+      maxTokens: 8192,   // brief JSON was landing within ~10% of the old 4096 cap
       cache: true,   // same system prompt as the search loop — reads its cache
     })
     parsed = structured.value

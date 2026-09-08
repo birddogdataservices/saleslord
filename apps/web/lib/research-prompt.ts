@@ -46,10 +46,31 @@ ${profile.voice_samples
   ? `- Rep voice samples — write the email in this exact style, matching sentence length, tone, and structure:\n${profile.voice_samples}`
   : '- Voice samples: not provided. Write in a clear, direct, human voice.'}
 
+Research rules (how hard to look, and what counts as knowing something):
+- This brief is spoken aloud in discovery calls. A confidently stated wrong fact costs the rep credibility; a missing one costs nothing. When those trade off, omit.
+- Search until every section you fill is supported by something you actually retrieved. Do not stop at the first plausible answer — the company's own newsroom, recent trade press, and public filings usually each add something the others miss.
+- For anything a rep would say out loud — a named person, a dollar figure, a date, a named system — prefer two independent sources. One source is acceptable; zero is not.
+- NEVER present an inference as a retrieved fact. If you are reasoning from industry norms rather than a source, either omit the item or make the basis explicit in its text.
+- Prefer null, an empty array, or "Unknown" over a plausible guess. Every nullable field in the schema below is there so you can decline. Declining is a correct answer and is never penalised.
+- Recency matters: an item older than ~18 months is rarely a useful outreach trigger. Prefer current material, and never present a stale item as current.
+
+Source and citation rules:
+- Every news item MUST link to the specific article, press release, or document you retrieved — a URL that opens directly onto that story.
+- NEVER cite a section index, a paginated listing, a newsroom or blog landing page, a search-results page, or a site's home page. If you cannot produce a direct link to the specific item, omit the item entirely.
+- Never construct, guess at, or pattern-match a URL. Use only URLs returned by search.
+- Two different news items must never share a URL. If they do, at most one of them is correctly sourced — keep that one.
+
 ${EMAIL_RULES}
+
+Stats rules — the stats block is a corporate schema and does not fit every organization:
+- Government, public-sector, non-profit, educational and similar entities have no "revenue". Never report an operating budget, appropriation, or total spend in the revenue field as though it were revenue — that is the single most likely way this brief embarrasses the rep on a call.
+- For such organizations set revenue.value to "N/A — <entity type>" and put the correct figure, correctly labelled, in revenue.context (e.g. value "N/A — state government", context "FY27 enacted budget ~$62.8B").
+- Same discipline everywhere else: if a metric does not apply to this organization, say so rather than substituting the nearest number you found. "Unknown" and "N/A" are both better than a mislabelled figure.
+- headcount for a public-sector body should state who is being counted (agency staff vs. employees served) — an unqualified number invites the rep to misuse it.
 
 Timing rules:
 - Infer the company's fiscal year end from public filings, Wikipedia, or industry norms
+- Public-sector bodies usually run a statutory fiscal year (US states are commonly July 1 – June 30); use the real one, not a corporate default
 - Ideal outreach window = 3–5 months before FY end (budget planning period)
 - window_status: "open" if today falls in that window, "approaching" if within 60 days of it, "closed" otherwise
 
@@ -83,10 +104,10 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
     "tags": ["industry tag", "size tag"]
   },
   "stats": {
-    "revenue":     { "value": "e.g. $3.4B or Unknown", "context": "e.g. +33% YoY" },
+    "revenue":     { "value": "e.g. $3.4B or Unknown — see the stats rules above", "context": "e.g. +33% YoY" },
     "headcount":   { "value": "e.g. ~7,000 or Unknown", "context": "e.g. +8% past 12 mo" },
     "open_roles":  { "value": "e.g. 47 or Unknown", "context": "e.g. 14 in engineering" },
-    "stage":       { "value": "e.g. Public · SNOW or Series B", "context": "e.g. IPO Sept 2020" },
+    "stage":       { "value": "e.g. Public · SNOW, Series B, or State government — executive branch", "context": "e.g. IPO Sept 2020" },
     "hq_location": "City, ST — US headquarters only, e.g. Atlanta, GA. null if unknown or non-US HQ."
   },
   "snapshot_business": "2-3 sentences: what the company does and how it makes money",

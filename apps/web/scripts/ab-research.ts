@@ -24,6 +24,7 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { buildSystemPrompt } from '../lib/research-prompt'
+import { webSearchTool, RESEARCH_MAX_USES } from '../lib/web-search'
 import { calculateCost } from '../lib/utils'
 import type { ProductPromptContext } from '../lib/types'
 
@@ -39,11 +40,14 @@ type Config = {
   id: string
   label: string
   model: string
-  maxTokens: number
+  maxTokens: number          // search-loop cap, mirrors the route
+  emitMaxTokens?: number     // phase-2 cap; defaults to the route's 8192
   thinking?: { type: 'disabled' } | { type: 'adaptive' }
-  effort?: 'low' | 'medium' | 'high'
+  effort?: 'low' | 'medium' | 'high' | 'xhigh'
   note: string
 }
+
+const DEFAULT_EMIT_MAX_TOKENS = 8192
 
 const CONFIGS: Config[] = [
   {
@@ -63,12 +67,19 @@ const CONFIGS: Config[] = [
   },
   {
     id: 'c',
-    label: 'Sonnet 5, adaptive thinking',
+    label: 'Sonnet 5, adaptive thinking, effort medium',
     model: 'claude-sonnet-5',
     maxTokens: 16000,
     thinking: { type: 'adaptive' },
     effort: 'medium',
-    note: 'Takes the model upgrade. Thinking tokens bill as output and may eat the rate saving — max_tokens raised so the brief cannot be truncated by thinking.',
+    note: 'NOTE: effort medium is BELOW Sonnet 5\'s default of high. Kept only to reproduce the 2026-09-08 baseline run — prefer config d for a fair read of the model.',
+  },
+  {
+    id: 'd',
+    label: 'Sonnet 5 at documented defaults',
+    model: 'claude-sonnet-5',
+    maxTokens: 16000,
+    note: 'Thinking and effort deliberately UNSET, so the model runs adaptive thinking at effort high — its actual defaults. This is the honest comparison; configs b and c both ran below default and understated the model. Always test a new model here first.',
   },
 ]
 
@@ -112,7 +123,7 @@ async function runOnce(
     max_tokens: cfg.maxTokens,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    tools: [webSearchTool(RESEARCH_MAX_USES)],
   }
   if (cfg.thinking) base.thinking = cfg.thinking
   if (cfg.effort) base.output_config = { effort: cfg.effort }
@@ -147,7 +158,7 @@ async function runOnce(
 
     const emit = await client.messages.create({
       model: cfg.model,
-      max_tokens: cfg.maxTokens,
+      max_tokens: cfg.emitMaxTokens ?? DEFAULT_EMIT_MAX_TOKENS,
       system: systemPrompt,
       cache_control: { type: 'ephemeral' },
       tools: [EMIT_TOOL],
@@ -259,7 +270,7 @@ async function main() {
     process.exit(1)
   }
 
-  const wanted = (arg('--configs') ?? 'a,b,c').split(',').map(s => s.trim())
+  const wanted = (arg('--configs') ?? 'a,b,c,d').split(',').map(s => s.trim())
   const configs = CONFIGS.filter(c => wanted.includes(c.id))
   const repeat = Number(arg('--repeat') ?? '1')
   if (!configs.length) { console.error(`No configs matched "${wanted.join(',')}".`); process.exit(1) }
@@ -323,7 +334,8 @@ async function main() {
   if (baseline) {
     for (const r of results.filter(x => !x.config.startsWith('a') && x.ok)) {
       const delta = ((r.costUsd - baseline.costUsd) / baseline.costUsd) * 100
-      console.log(`  [${r.config}] vs baseline: ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% cost, ${((r.elapsedMs - baseline.elapsedMs) / 1000).toFixed(1)}s slower`)
+      const secs = (r.elapsedMs - baseline.elapsedMs) / 1000
+      console.log(`  [${r.config}] vs baseline: ${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% cost, ${Math.abs(secs).toFixed(1)}s ${secs < 0 ? "faster" : "slower"}`)
     }
   }
 
