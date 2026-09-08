@@ -217,6 +217,17 @@ export type ProspectSidebarItem = Pick<Prospect, 'id' | 'name' | 'last_refreshed
 }
 
 // ─────────────────────────────────────────
+// Admin — allowlist invites
+// ─────────────────────────────────────────
+
+// Outcome of the invite email fired when an admin adds an allowlist entry.
+// Three states, not a boolean: "already_registered" is a success — the person
+// has an auth user (they signed in with Google, or were allowlisted before) so
+// Supabase declines to invite them again, and nothing is wrong. Reporting that
+// as a failure told admins to retry something that had already worked.
+export type InviteStatus = 'sent' | 'already_registered' | 'failed'
+
+// ─────────────────────────────────────────
 // Jobs — AI job history (sidebar Jobs section)
 // ─────────────────────────────────────────
 

@@ -36,7 +36,14 @@ create table allowed_emails (
   id         uuid primary key default gen_random_uuid(),
   email      text not null unique,
   note       text,                      -- e.g. "contractor", "guest"
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  -- Permissive format guard — catches typos and junk before they are stored
+  -- permanently and emailed an invite. Mirrors isValidEmail() in
+  -- apps/web/lib/utils.ts; keep the two in sync.
+  constraint allowed_emails_email_format check (
+    length(email) <= 254
+    and email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+  )
 );
 alter table allowed_emails enable row level security;
 -- Only service role (API routes) can read this — not client

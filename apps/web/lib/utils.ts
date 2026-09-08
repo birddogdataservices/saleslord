@@ -7,6 +7,19 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // ─────────────────────────────────────────
+// Email validation
+// ─────────────────────────────────────────
+// Deliberately permissive — the goal is catching typos and garbage before we
+// write them to the allowlist and fire mail at them, not implementing RFC 5322.
+// The matching CHECK constraint on allowed_emails.email uses the same shape.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+export function isValidEmail(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.length <= 254 && EMAIL_RE.test(trimmed)
+}
+
+// ─────────────────────────────────────────
 // Anthropic pricing — update when model pricing changes
 // Prices in USD per token
 // ─────────────────────────────────────────

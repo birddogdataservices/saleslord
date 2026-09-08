@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { GATED_MODULES } from '@/lib/modules'
+import { isValidEmail } from '@/lib/utils'
+import type { InviteStatus } from '@/lib/types'
 
 type AllowedEmail = {
   id: string
@@ -42,6 +44,7 @@ export default function AdminUsersClient() {
   const [adding,   setAdding]   = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newNote,  setNewNote]  = useState('')
+  const [resendingId, setResendingId] = useState<string | null>(null)
 
   // Module access state
   const [moduleUsers,    setModuleUsers]    = useState<ModuleUser[]>([])
@@ -128,6 +131,12 @@ export default function AdminUsersClient() {
     e.preventDefault()
     const email = newEmail.trim().toLowerCase()
     if (!email) return
+    // Same check the route runs — catch the typo here so the admin gets it
+    // instantly instead of after a round trip.
+    if (!isValidEmail(email)) {
+      toast.error('That doesn\'t look like a valid email address.')
+      return
+    }
 
     setAdding(true)
     const res = await fetch('/api/admin/allowed-emails', {
@@ -142,7 +151,25 @@ export default function AdminUsersClient() {
     setEmails(prev => [...prev, data.email])
     setNewEmail('')
     setNewNote('')
-    toast.success(`${email} added to allowlist.`)
+    const invite = data.invite as InviteStatus
+    if (invite === 'failed') {
+      // Added, but the mail didn't go out — the one case worth a retry prompt.
+      toast.warning(`${email} added, but the invite email didn't send — use Resend invite to retry.`)
+    } else {
+      toast.success(
+        invite === 'already_registered'
+          ? `${email} added — they already have an account and can sign in now.`
+          : `${email} added — invite email sent.`
+      )
+    }
+  }
+
+  async function resend(id: string, email: string) {
+    setResendingId(id)
+    const res = await fetch(`/api/admin/allowed-emails/${id}/resend`, { method: 'POST' })
+    setResendingId(null)
+    if (!res.ok) { toast.error(`Couldn't resend invite to ${email}.`); return }
+    toast.success(`Invite resent to ${email}.`)
   }
 
   async function remove(id: string, email: string) {
@@ -250,7 +277,7 @@ export default function AdminUsersClient() {
                 </button>
               </div>
               <p className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>
-                Teammates can sign in with Google or by magic link. Remind them to add their Anthropic API key in Profile &amp; Settings.
+                Adding a teammate emails them a one-click login link automatically. They can also sign in with Google or request a magic link. Remind them to add their Anthropic API key in Profile &amp; Settings.
               </p>
             </form>
           </div>
@@ -282,13 +309,23 @@ export default function AdminUsersClient() {
                         <span className="text-[11px]" style={{ color: 'var(--sl-text3)' }}>{entry.note}</span>
                       )}
                     </div>
-                    <button
-                      onClick={() => remove(entry.id, entry.email)}
-                      className="text-[11px] px-3 py-1 rounded-[5px] transition-colors hover:opacity-80"
-                      style={{ border: '1px solid var(--sl-border)', color: 'var(--sl-text3)', background: 'transparent' }}
-                    >
-                      Remove
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => resend(entry.id, entry.email)}
+                        disabled={resendingId === entry.id}
+                        className="text-[11px] px-3 py-1 rounded-[5px] transition-colors hover:opacity-80 disabled:opacity-40"
+                        style={{ border: '1px solid var(--sl-border)', color: 'var(--sl-text3)', background: 'transparent' }}
+                      >
+                        {resendingId === entry.id ? 'Sending…' : 'Resend invite'}
+                      </button>
+                      <button
+                        onClick={() => remove(entry.id, entry.email)}
+                        className="text-[11px] px-3 py-1 rounded-[5px] transition-colors hover:opacity-80"
+                        style={{ border: '1px solid var(--sl-border)', color: 'var(--sl-text3)', background: 'transparent' }}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
