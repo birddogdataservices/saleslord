@@ -102,7 +102,7 @@ export function computeWindowStatus(fyEnd: string): 'open' | 'approaching' | 'cl
   try {
     const now  = new Date()
     const year = now.getFullYear()
-    let target = new Date(`${fyEnd} ${year}`)
+    const target = new Date(`${fyEnd} ${year}`)
     if (isNaN(target.getTime())) return 'closed'
     if (target <= now) target.setFullYear(year + 1)
     const days = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
