@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "ab:research": "tsx --env-file=.env.local scripts/ab-research.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",
@@ -41,6 +42,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }
