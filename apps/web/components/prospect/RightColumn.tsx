@@ -1,4 +1,5 @@
 import type { ProspectBrief, DecisionMaker, ProspectNote } from '@/lib/types'
+import { computeWindowStatus } from '@/lib/utils'
 import ProspectLog from './ProspectLog'
 import CaseStudySection from './CaseStudySection'
 
@@ -8,8 +9,16 @@ function ReadinessCard({ brief, dms, notes }: {
   dms: DecisionMaker[]
   notes: ProspectNote[]
 }) {
+  // Derive the window live from fy_end rather than reading the stored
+  // window_status, which is whatever the model decided on research day. Reading
+  // the stored value let this card claim "Buy window open" while the TimingBar
+  // directly above it said "Monitoring".
+  const windowOpen = brief.timing?.fy_end
+    ? computeWindowStatus(brief.timing.fy_end) === 'open'
+    : false
+
   const checks = [
-    { label: 'Buy window open',         ok: brief.timing?.window_status === 'open' },
+    { label: 'Buy window open',         ok: windowOpen },
     { label: 'Pain matched to product', ok: (brief.pain_signals?.length ?? 0) > 0 },
     { label: 'News trigger available',  ok: (brief.news?.length ?? 0) > 0 },
     { label: 'Champion identified',     ok: dms.some(d => d.role === 'champion') },

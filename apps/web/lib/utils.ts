@@ -26,8 +26,26 @@ const PRICING: Record<string, { input: number; output: number }> = {
   },
 }
 
+// Pricing is per model family, but callers sometimes pass a dated snapshot ID
+// (e.g. 'claude-haiku-4-5-20251001'). Strip a trailing -YYYYMMDD so every
+// snapshot resolves to its family's rate. Without this, dated IDs missed the
+// map entirely and fell through to the fallback below — logging Haiku calls at
+// Sonnet prices, ~3x the real cost.
+function normalizeModelId(model: string): string {
+  return model.replace(/-\d{8}$/, '')
+}
+
+// Most expensive known model — an unknown ID should over-report, never
+// under-report, so cost surprises surface instead of hiding.
+const FALLBACK_MODEL = 'claude-sonnet-4-6'
+
 export function calculateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const prices = PRICING[model] ?? PRICING['claude-sonnet-4-6']
+  const prices = PRICING[normalizeModelId(model)]
+  if (!prices) {
+    console.warn(`[calculateCost] Unknown model "${model}" — billing at ${FALLBACK_MODEL} rates. Add it to PRICING.`)
+    const fallback = PRICING[FALLBACK_MODEL]
+    return fallback.input * inputTokens + fallback.output * outputTokens
+  }
   return prices.input * inputTokens + prices.output * outputTokens
 }
 
