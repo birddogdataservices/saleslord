@@ -46,6 +46,7 @@ export type RepProfile = {
   anthropic_api_key: string | null  // per-user BYOK — never sent to client as plaintext
   stripe_customer_id: string | null
   locale: string                    // BCP-47 — drives chrome + default generation language
+  daily_call_limit: number | null   // null = DAILY_CALL_LIMIT env default (50); runaway guard, not a budget
   updated_at: string
 }
 
@@ -58,6 +59,10 @@ export type Prospect = {
   last_refreshed_at: string | null
   archived_at: string | null
   output_language_override: string | null  // BCP-47, nullable — sticky email/pitch language; null = use profile locale
+  // Staged research: null = the decision-maker stage has never run for this
+  // prospect. Set even when the stage ran and found nobody, so the UI can tell
+  // "looked and found nobody" apart from "never looked".
+  dm_researched_at: string | null
 }
 
 export type NewsItem = {
@@ -103,8 +108,22 @@ export type ProspectBrief = {
   outreach_angle: string | null
   stats: CompanyStats | null
   timing: TimingData | null
-  email: EmailDraft | null
+  fit: FitVerdict | null      // stage 1 gate; null on briefs written before staging
+  email: EmailDraft | null    // legacy — stage 1 no longer writes this; refresh-email owns it
   created_at: string
+}
+
+// ─────────────────────────────────────────
+// Stage 1 fit verdict — what the rep gates the decision-maker stage on
+// ─────────────────────────────────────────
+// Deliberately excludes fiscal-year timing: timing answers "when", fit answers
+// "whether". They are tracked separately (see TimingData) and mixing them
+// produces a verdict that is really a calendar reading.
+export type FitVerdict = {
+  verdict: 'strong' | 'moderate' | 'weak'
+  rationale: string              // which confirmed signals line up with which product capability
+  budget_signal: string          // evidence they can fund it; 'Unknown' when nothing found
+  what_would_change_it: string   // the single missing fact that would most move the verdict
 }
 
 export type DmRole = 'champion' | 'economic_buyer' | 'gatekeeper' | 'end_user' | 'influencer' | 'custom'

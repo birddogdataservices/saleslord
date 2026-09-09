@@ -35,15 +35,11 @@ async function run(request: Request): Promise<Response> {
 
   const adminClient = createAdminClient()
 
-  // 2. Rate limit — shared 24h bucket across the metered endpoints
-  const limit = await checkDailyLimit(adminClient, user.id)
-  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
-
-  // 3. Parse body
+  // 2. Parse body
   const { prospect_id } = await request.json() as { prospect_id?: string }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
-  // 4. Fetch prospect (ownership check) + brief + all case studies in parallel
+  // 3. Fetch prospect (ownership check) + brief + all case studies in parallel
   const [prospectRes, briefRes, caseStudiesRes, profileRes] = await Promise.all([
     adminClient
       .from('prospects')
@@ -63,7 +59,7 @@ async function run(request: Request): Promise<Response> {
       .order('created_at', { ascending: true }),
     adminClient
       .from('rep_profiles')
-      .select('anthropic_api_key, locale')
+      .select('anthropic_api_key, locale, daily_call_limit')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -74,6 +70,11 @@ async function run(request: Request): Promise<Response> {
     return Response.json({ error: 'Prospect not found' }, { status: 404 })
   }
   if (!briefRes.data) return Response.json({ error: 'No brief found — run research first' }, { status: 404 })
+
+  // Runaway guard — checked after the profile load so the rep's
+  // daily_call_limit override applies. See METERED_ENDPOINTS.
+  const limit = await checkDailyLimit(adminClient, user.id, profileRes.data?.daily_call_limit)
+  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 
   const caseStudies = (caseStudiesRes.data ?? []) as CaseStudy[]
   if (caseStudies.length === 0) {

@@ -95,11 +95,7 @@ async function run(request: Request): Promise<Response> {
 
   const adminClient = createAdminClient()
 
-  // 2. Rate limit — shared 24h bucket across the metered endpoints
-  const limit = await checkDailyLimit(adminClient, user.id)
-  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
-
-  // 3. Parse body
+  // 2. Parse body
   const { prospect_id } = await request.json() as { prospect_id?: string }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
@@ -128,6 +124,11 @@ async function run(request: Request): Promise<Response> {
   const brief       = briefRes.data
   const profile     = profileRes.data
   const products: ProductPromptContext[] = productRes.data ?? []
+
+  // Runaway guard — checked after the profile load so the rep's
+  // daily_call_limit override applies. See METERED_ENDPOINTS.
+  const limit = await checkDailyLimit(adminClient, user.id, profile?.daily_call_limit)
+  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 
   // BYOK hard gate
   const storedKey = profile?.anthropic_api_key?.trim()

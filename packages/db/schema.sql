@@ -21,6 +21,7 @@ create table rep_profiles (
   anthropic_api_key   text,              -- per-user BYOK; required to run research/email — no platform fallback
   stripe_customer_id  text,              -- stubbed: populated when Stripe billing is wired
   locale              text not null default 'en-US', -- BCP-47; drives chrome + default generation language (the 6 in lib/i18n/languages.ts)
+  daily_call_limit    integer,           -- null = DAILY_CALL_LIMIT env default (50). Runaway guard, not a budget — BYOK means each rep pays their own card.
   updated_at          timestamptz default now()
 );
 alter table rep_profiles enable row level security;
@@ -83,6 +84,11 @@ create table prospects (
   last_refreshed_at timestamptz,
   archived_at      timestamptz,     -- null = active; set = archived (soft delete)
   output_language_override text,    -- nullable BCP-47; sticky per-prospect, emails/pitches only; null = fall back to rep_profiles.locale
+  -- Staged research: NULL = the decision-maker stage has never run. Set even
+  -- when zero people were found, so "looked and found nobody" is distinct from
+  -- "never looked". Lives here rather than on prospect_briefs so decision makers
+  -- survive a stage 1 refresh (which replaces the brief row).
+  dm_researched_at timestamptz,
   unique (user_id, query)           -- required for ON CONFLICT upsert in research route
 );
 alter table prospects enable row level security;
@@ -103,7 +109,8 @@ create table prospect_briefs (
   outreach_angle text,
   stats          jsonb,                 -- {revenue, headcount, open_roles, stage} each {value, context}
   timing         jsonb,                 -- {fy_end, recommended_outreach_window, window_status, reasoning}
-  email          jsonb,                 -- {subject, body}
+  fit            jsonb,                 -- {verdict, rationale, budget_signal, what_would_change_it} — stage 1 gate; null on pre-staging briefs
+  email          jsonb,                 -- {subject, body} — legacy: stage 1 no longer writes this; refresh-email owns it
   created_at     timestamptz default now()
 );
 alter table prospect_briefs enable row level security;

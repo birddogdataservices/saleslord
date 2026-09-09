@@ -23,6 +23,7 @@ import { calculateCost } from '@/lib/utils'
 // it, so treat them as stable and add rather than rename.
 export const USAGE_ENDPOINT = {
   RESEARCH:             'research',
+  DECISION_MAKERS:      'decision-makers',
   CHECK_UPDATES:        'check-updates',
   CASE_STUDY_MATCH:     'case-study-match',
   EMAIL:                'email',
@@ -46,22 +47,36 @@ export type UsageEndpoint = (typeof USAGE_ENDPOINT)[keyof typeof USAGE_ENDPOINT]
 //     an admin only so the cost lands somewhere. Never the admin's budget.
 export const METERED_ENDPOINTS: readonly UsageEndpoint[] = [
   USAGE_ENDPOINT.RESEARCH,
+  USAGE_ENDPOINT.DECISION_MAKERS,
   USAGE_ENDPOINT.CHECK_UPDATES,
   USAGE_ENDPOINT.CASE_STUDY_MATCH,
 ]
 
-export function dailyCallLimit(): number {
-  return Number(process.env.DAILY_CALL_LIMIT ?? '25')
+// This is a RUNAWAY GUARD, not a budget. BYOK means every rep pays their own
+// card, so the limit is not here to control spend — it is here so a retry loop
+// or a misconfigured client cannot make unbounded calls before anyone notices.
+// Sized so it never binds in real use: staged, one full pipeline is two metered
+// calls, so 50 allows ~25 complete prospects a day.
+//
+// A rep can be overridden individually via rep_profiles.daily_call_limit.
+export function dailyCallLimit(override?: number | null): number {
+  return override ?? Number(process.env.DAILY_CALL_LIMIT ?? '50')
 }
 
 // Discriminated result so callers translate to their own Response — same shape
 // as the loaders in lib/prospect-context.ts.
 export type LimitCheck = { ok: true } | { ok: false; status: number; error: string }
 
-// Rolling 24h budget check. Only metered endpoints count; see METERED_ENDPOINTS.
+// Rolling 24h guard. Only metered endpoints count; see METERED_ENDPOINTS.
+//
+// `override` is rep_profiles.daily_call_limit. Callers that have already loaded
+// the profile should pass it to avoid a second query; omitting it falls back to
+// the env default rather than silently ignoring a configured override, so pass
+// it wherever the profile is in hand.
 export async function checkDailyLimit(
   adminClient: SupabaseClient,
   userId: string,
+  override?: number | null,
 ): Promise<LimitCheck> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
@@ -72,7 +87,7 @@ export async function checkDailyLimit(
     .in('endpoint', METERED_ENDPOINTS as unknown as string[])
     .gte('created_at', since)
 
-  if ((count ?? 0) >= dailyCallLimit())
+  if ((count ?? 0) >= dailyCallLimit(override))
     return { ok: false, status: 429, error: 'Daily limit reached. Resets in 24 hours.' }
 
   return { ok: true }

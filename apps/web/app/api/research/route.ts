@@ -36,23 +36,24 @@ async function run(request: Request): Promise<Response> {
 
   const adminClient = createAdminClient()
 
-  // 2. Rate limit — 25 metered calls per rolling 24h (configurable via
-  // DAILY_CALL_LIMIT). Only the expensive routes count; see METERED_ENDPOINTS.
-  const limit = await checkDailyLimit(adminClient, user.id)
-  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
-
-  // 3. Parse body
+  // 2. Parse body
   const { query } = await request.json() as { query?: string }
   if (!query?.trim()) {
     return Response.json({ error: 'query is required' }, { status: 400 })
   }
 
-  // 4. Fetch rep profile + the user's products + team targeting config
+  // 3. Fetch rep profile + the user's products + team targeting config
   const [{ data: profile }, { data: productRows }, { data: teamConfigRow }] = await Promise.all([
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     adminClient.from('products').select('name, description, value_props, competitors').eq('user_id', user.id).order('created_at', { ascending: true }),
     adminClient.from('team_config').select('seniority_bands, target_functions').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
+
+  // 4. Runaway guard — metered calls per rolling 24h. Checked after the profile
+  // load so the rep's daily_call_limit override applies; these are cheap reads
+  // and the guard exists to prevent the Anthropic call, not the queries.
+  const limit = await checkDailyLimit(adminClient, user.id, profile?.daily_call_limit)
+  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 
   // BYOK hard gate — decrypt stored key; no platform fallback
   const storedKey = profile?.anthropic_api_key?.trim()
