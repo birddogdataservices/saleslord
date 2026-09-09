@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# A/B harness output — real briefs about real prospects, and noisy. Local only.
+ab-results/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

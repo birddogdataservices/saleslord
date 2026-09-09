@@ -3,30 +3,15 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { ROLE_COLORS, ROLE_LABELS } from '@/lib/utils'
-import type { DecisionMaker, DmRole, TargetingTier } from '@/lib/types'
+import { ROLE_COLORS, ROLE_LABELS, TIER_COLORS, TIER_LABELS, tierOf, sortByTier } from '@/lib/utils'
+import type { DecisionMaker, DmRole } from '@/lib/types'
 
 type Props = { decisionMakers: DecisionMaker[] }
 
 const ALL_ROLES: DmRole[] = ['champion', 'economic_buyer', 'gatekeeper', 'end_user', 'influencer', 'custom']
 
-const TIER_RANK: Record<TargetingTier, number> = {
-  prime_target: 0,
-  intel_only:   1,
-  low_signal:   2,
-}
-
-function tierOf(dm: DecisionMaker): TargetingTier {
-  return dm.targeting_tier ?? 'prime_target'
-}
-
 export default function DecisionMakers({ decisionMakers: initial }: Props) {
-  const [dms, setDms] = useState(
-    [...initial].sort((a, b) => {
-      const tierDiff = TIER_RANK[tierOf(a)] - TIER_RANK[tierOf(b)]
-      return tierDiff !== 0 ? tierDiff : a.sort_order - b.sort_order
-    })
-  )
+  const [dms, setDms] = useState(() => sortByTier(initial))
 
   async function updateRole(id: string, role: DmRole, label: string) {
     const colors = ROLE_COLORS[role]
@@ -42,8 +27,13 @@ export default function DecisionMakers({ decisionMakers: initial }: Props) {
     ))
   }
 
+  const primeCount = dms.filter(dm => tierOf(dm) === 'prime_target').length
+
   return (
-    <SectionCard title="Decision makers" meta={`${dms.length} identified · click role to reassign`}>
+    <SectionCard
+      title="Decision makers"
+      meta={`${primeCount} of ${dms.length} prime · click role to reassign`}
+    >
       {dms.map(dm => (
         <DMCard key={dm.id} dm={dm} onRoleChange={updateRole} />
       ))}
@@ -57,6 +47,9 @@ function DMCard({ dm, onRoleChange }: {
 }) {
   const [open, setOpen]          = useState(false)
   const [customInput, setCustom] = useState('')
+
+  const tier       = tierOf(dm)
+  const tierColors = TIER_COLORS[tier]
 
   return (
     <div className="px-[14px] py-[12px]" style={{ borderBottom: '1px solid var(--sl-border-s)' }}>
@@ -74,6 +67,23 @@ function DMCard({ dm, onRoleChange }: {
           </div>
           <div className="text-[11px] mt-[1px]" style={{ color: 'var(--sl-text2)' }}>
             {dm.title}
+          </div>
+
+          {/* Targeting tier — why this person is (or isn't) worth a direct
+              approach. Sits under the title so the reasoning has room to wrap
+              without squeezing the role pill. */}
+          <div className="flex items-baseline gap-[6px] mt-[5px] flex-wrap">
+            <span
+              className="text-[10px] font-semibold px-[7px] py-[1px] rounded-full flex-shrink-0"
+              style={{ background: tierColors.bg, color: tierColors.text }}
+            >
+              {TIER_LABELS[tier]}
+            </span>
+            {dm.tier_reasoning && (
+              <span className="text-[10px] leading-snug" style={{ color: 'var(--sl-text3)' }}>
+                {dm.tier_reasoning}
+              </span>
+            )}
           </div>
         </div>
 

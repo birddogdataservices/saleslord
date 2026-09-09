@@ -26,23 +26,32 @@ export type StructuredResult = {
   value: any
   inputTokens: number
   outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
 }
 
 // Forces a single structured-output call. `messages` is the full conversation;
 // `system` should describe the expected JSON shape (the tool schema is permissive,
 // so the shape comes from the prompt). Returns the tool input (guaranteed valid
 // JSON) plus token usage for cost tracking.
+// `cache` opts into prompt caching for this call. Worth it only when the prefix
+// repeats: the web-search routes send this same large system prompt during their
+// search loop, so the emit call reads it back at ~0.1x instead of paying full
+// price a second time. The short Haiku routes leave it off — their prefixes are
+// small, single-shot, and may not even reach the model's minimum cacheable size.
 export async function generateStructured(args: {
   client: Anthropic
   model: string
   system: string
   messages: Anthropic.MessageParam[]
   maxTokens?: number
+  cache?: boolean
 }): Promise<StructuredResult> {
   const res = await args.client.messages.create({
     model:      args.model,
     max_tokens: args.maxTokens ?? 4096,
     system:     args.system,
+    ...(args.cache ? { cache_control: { type: 'ephemeral' as const } } : {}),
     tools:      [EMIT_TOOL] as any,
     tool_choice: { type: 'tool', name: EMIT_TOOL.name } as any,
     messages:   args.messages,
@@ -53,8 +62,10 @@ export async function generateStructured(args: {
     throw new Error('No structured tool output')
   }
   return {
-    value:        toolUse.input,
-    inputTokens:  res.usage.input_tokens,
-    outputTokens: res.usage.output_tokens,
+    value:            toolUse.input,
+    inputTokens:      res.usage.input_tokens,
+    outputTokens:     res.usage.output_tokens,
+    cacheReadTokens:  res.usage.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
   }
 }

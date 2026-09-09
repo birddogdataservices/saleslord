@@ -2,134 +2,17 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
-import { EMAIL_RULES } from '@/lib/prompts'
+import { buildSystemPrompt } from '@/lib/research-prompt'
+import { webSearchTool, RESEARCH_MAX_USES } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import { generateStructured } from '@/lib/structured-output'
 import type { DmRole, CompanyStats, ProductPromptContext } from '@/lib/types'
 
+// The system prompt lives in lib/research-prompt.ts so the A/B harness in
+// scripts/ab-research.ts runs the exact prompt production uses.
 const MODEL = 'claude-sonnet-4-6'
-
-// ─────────────────────────────────────────
-// System prompt
-// ─────────────────────────────────────────
-function buildSystemPrompt(profile: {
-  products: ProductPromptContext[]
-  icp_description: string
-  rep_background: string
-  voice_samples: string
-  seniority_bands: string[]
-  target_functions: string[]
-}, todayISO: string, currentMonth: number): string {
-  // Format products section — supports 1 or many
-  const productsBlock = profile.products.length === 0
-    ? '- Products: not specified'
-    : profile.products.length === 1
-      ? `- Product: ${profile.products[0].name}
-- Description: ${profile.products[0].description}
-- Value props: ${profile.products[0].value_props}
-- Competitors: ${profile.products[0].competitors}`
-      : `- Products (rep carries multiple — match the most relevant to this prospect):\n${
-          profile.products.map((p, i) =>
-            `  ${i + 1}. ${p.name}: ${p.description}. Value props: ${p.value_props}. Competes with: ${p.competitors}`
-          ).join('\n')
-        }`
-
-  return `You are a B2B sales intelligence assistant. Research a company and return a structured JSON brief personalized to this specific rep.
-
-Today: ${todayISO} (month ${currentMonth})
-
-Rep context:
-${productsBlock}
-- ICP: ${profile.icp_description}
-- Rep background: ${profile.rep_background}
-${profile.voice_samples
-  ? `- Rep voice samples — write the email in this exact style, matching sentence length, tone, and structure:\n${profile.voice_samples}`
-  : '- Voice samples: not provided. Write in a clear, direct, human voice.'}
-
-${EMAIL_RULES}
-
-Timing rules:
-- Infer the company's fiscal year end from public filings, Wikipedia, or industry norms
-- Ideal outreach window = 3–5 months before FY end (budget planning period)
-- window_status: "open" if today falls in that window, "approaching" if within 60 days of it, "closed" otherwise
-
-Decision maker rules:
-- Identify 3–5 individuals likely involved in a software purchase decision for this product
-- Use web search to find named individuals where publicly available (LinkedIn, press releases, company blog, earnings calls)
-- For each person: infer their likely priorities based on their role, public statements, and company context
-- Assign one of: champion, economic_buyer, gatekeeper, end_user, influencer
-- suggested_angle must be specific to this person at this company — never generic role advice
-- avatar_initials: first letter of first + last name (2 chars)
-
-Targeting tier rules — the rep's target profile:
-${profile.seniority_bands.length > 0
-  ? `- Target seniority bands: ${profile.seniority_bands.join(', ')}`
-  : '- Target seniority bands: not configured — use your judgment'}
-${profile.target_functions.length > 0
-  ? `- Target functions: ${profile.target_functions.join(', ')}`
-  : '- Target functions: not configured — use your judgment'}
-For each decision maker, assign a targeting_tier:
-- "prime_target": matches target seniority AND target function — this person is worth reaching out to directly
-- "intel_only": partial match or adjacent (e.g. right function but too senior/junior, or right seniority but different function) — useful context, not a direct outreach target
-- "low_signal": neither matches well — include for completeness but unlikely to be relevant
-Also provide a one-line tier_reasoning explaining your assignment (e.g. "VP-level in Data Engineering — matches both bands and functions")
-Use judgment, not a rigid formula. A CDO who owns data engineering is prime even if CDO isn't in the band list.
-
-Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
-{
-  "company": {
-    "name": "string",
-    "tagline": "one-line description",
-    "tags": ["industry tag", "size tag"]
-  },
-  "stats": {
-    "revenue":     { "value": "e.g. $3.4B or Unknown", "context": "e.g. +33% YoY" },
-    "headcount":   { "value": "e.g. ~7,000 or Unknown", "context": "e.g. +8% past 12 mo" },
-    "open_roles":  { "value": "e.g. 47 or Unknown", "context": "e.g. 14 in engineering" },
-    "stage":       { "value": "e.g. Public · SNOW or Series B", "context": "e.g. IPO Sept 2020" },
-    "hq_location": "City, ST — US headquarters only, e.g. Atlanta, GA. null if unknown or non-US HQ."
-  },
-  "snapshot_business": "2-3 sentences: what the company does and how it makes money",
-  "snapshot_current": "2-3 sentences: what is happening right now — current pressures, strategic moves, recent news relevant to this rep",
-  "initiatives": ["string — strategic initiative relevant to the rep's product"],
-  "pain_signals": ["string — pain or pressure tied specifically to the rep's product"],
-  "tech_signals": ["tool or platform name only"],
-  "news": [
-    {
-      "date": "Mon DD, YYYY",
-      "text": "string — what happened and why it matters to this rep",
-      "source": "Publication name",
-      "url": "https://real-url-only — omit item if no real URL found"
-    }
-  ],
-  "outreach_angle": "2-3 sentences connecting their situation to the rep's product and background",
-  "timing": {
-    "fy_end": "e.g. January 31",
-    "recommended_outreach_window": "e.g. August–October",
-    "window_status": "open | approaching | closed",
-    "reasoning": "1 sentence"
-  },
-  "decision_makers": [
-    {
-      "name": "string — real person name or null if not findable",
-      "title": "string",
-      "role": "champion | economic_buyer | gatekeeper | end_user | influencer",
-      "role_label": "Champion | Economic buyer | Gatekeeper | End user | Influencer",
-      "avatar_initials": "2 chars",
-      "cares_about": "string — their specific priorities at this company right now",
-      "suggested_angle": "string — specific angle for this person, not generic role advice",
-      "targeting_tier": "prime_target | intel_only | low_signal",
-      "tier_reasoning": "string — one-line rationale for the tier assignment"
-    }
-  ],
-  "email": {
-    "subject": "string",
-    "body": "string — under 120 words, in rep's voice"
-  }
-}`
-}
 
 // ─────────────────────────────────────────
 // Route handler
@@ -218,15 +101,24 @@ async function run(request: Request): Promise<Response> {
     { role: 'user', content: `Research this company for my B2B sales pipeline: ${query.trim()}` }
   ]
 
+  // Top-level cache_control marks the last cacheable block automatically, so the
+  // prefix — system prompt, then the accumulated search findings — is cached and
+  // re-read at ~0.1x on every continuation below. Without it each continuation
+  // resends the whole growing conversation at full price, and there can be seven
+  // of them. The same system prompt also feeds the phase-2 emit call, so that
+  // reads from this cache too.
   let response = await client.messages.create({
     model: MODEL,
     max_tokens: 4096,
     system: systemPrompt,
-    tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+    cache_control: { type: 'ephemeral' },
+    tools: [webSearchTool(RESEARCH_MAX_USES)] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
   let totalOutputTokens = response.usage.output_tokens
+  let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
+  let cacheWriteTokens  = response.usage.cache_creation_input_tokens ?? 0
 
   // web_search is a SERVER-side tool — searches execute inside a single API
   // call, so stop_reason is never 'tool_use'. When the server-side loop hits
@@ -243,11 +135,14 @@ async function run(request: Request): Promise<Response> {
       model: MODEL,
       max_tokens: 4096,
       system: systemPrompt,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+      cache_control: { type: 'ephemeral' },
+      tools: [webSearchTool(RESEARCH_MAX_USES)] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens
     totalOutputTokens += response.usage.output_tokens
+    cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
+    cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
   }
 
   // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
@@ -266,11 +161,14 @@ async function run(request: Request): Promise<Response> {
         { role: 'assistant', content: findings || '(research gathered)' },
         { role: 'user', content: 'Now output the complete brief exactly as specified above, by calling the emit_result tool with the JSON object.' },
       ],
-      maxTokens: 4096,
+      maxTokens: 8192,   // brief JSON was landing within ~10% of the old 4096 cap
+      cache: true,   // same system prompt as the search loop — reads its cache
     })
     parsed = structured.value
     totalInputTokens  += structured.inputTokens
     totalOutputTokens += structured.outputTokens
+    cacheReadTokens   += structured.cacheReadTokens
+    cacheWriteTokens  += structured.cacheWriteTokens
   } catch {
     console.error('[research] Structured brief generation failed')
     return Response.json({ error: 'Failed to generate brief' }, { status: 500 })
@@ -391,6 +289,8 @@ async function run(request: Request): Promise<Response> {
     model:        MODEL,
     inputTokens:  totalInputTokens,
     outputTokens: totalOutputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
   })
 
   // 10. Return

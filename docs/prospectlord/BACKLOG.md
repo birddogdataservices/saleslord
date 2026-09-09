@@ -13,7 +13,7 @@ Items are roughly priority-ordered within each section.
 ## 🟡 Should have (product is awkward without these)
 
 - [x] Check for Updates — `POST /api/check-updates`, append-only blurb history, `UpdateBlurbs` component, `CheckUpdatesButton` in topbar
-- [x] **Decision maker targeting tiers** — `targeting_tier` + `tier_reasoning` on `decision_makers`; `team_config` singleton for shared seniority bands + target functions; chip UI in setup page (admin-edit, all reps read); research prompt tiers each DM; cards sort prime_target → intel_only → low_signal; single flat list, no badges or sections.
+- [x] **Decision maker targeting tiers** — `targeting_tier` + `tier_reasoning` on `decision_makers`; `team_config` singleton for shared seniority bands + target functions; chip UI in setup page (admin-edit, all reps read); research prompt tiers each DM; cards sort prime_target → intel_only → low_signal; single flat list, no sections. **Updated 2026-09-08:** tier badge + `tier_reasoning` now render on each card, on screen and in the exported PDF — the tiers were computed and stored but invisible, so a rep could not tell which names were worth approaching or why. Sorting alone did not communicate it.
 
 - [ ] Vercel cron wired (`vercel.json` already has the schedule)
 - [ ] Product selector in "Add prospect" flow — when multiple products exist, let rep pick which to research against
@@ -35,6 +35,8 @@ Items are roughly priority-ordered within each section.
 - [ ] Prospect search — sidebar search is client-side filter; works fine for < 100 prospects
 - [ ] Topbar company meta — show headcount / stage from stats below company name (already partially done)
 - [ ] Empty state for prospects with no brief yet (beyond current placeholder text)
+- [ ] Admin UI for per-rep `daily_call_limit` override — column is manual-edit only at first (see STAGED-RESEARCH.md)
+- [ ] **ZoomInfo integration for decision makers** — the staged decision-maker call finds named people via web search only, and under the Phase 0 sourcing rules it will correctly return "no named individuals found publicly" more often than before. A contact-data provider would turn that empty state into real coverage, and would let the model verify names it found rather than trusting a single web source. Worth revisiting once the staged research split has settled; the decision-maker stage is already an isolated call, so wiring a provider into it does not touch company research.
 
 ## 🤖 Model strategy (revenue + quality)
 
