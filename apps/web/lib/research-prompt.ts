@@ -7,16 +7,18 @@
 // Pure string building — no Supabase, no Anthropic client. Callers supply the
 // rep context.
 
-import { EMAIL_RULES } from '@/lib/prompts'
 import type { ProductPromptContext } from '@/lib/types'
 
+// Stage 1 only — company assessment and the fit verdict the rep gates on.
+//
+// Deliberately absent: voice samples (they shaped the email, which now belongs
+// to refresh-email) and seniority bands / target functions (they shape decision
+// maker tiering, which now belongs to the stage 2 prompt). Adding them back here
+// would mean stage 1 is doing a later stage's job again.
 export type ResearchPromptProfile = {
   products: ProductPromptContext[]
   icp_description: string
   rep_background: string
-  voice_samples: string
-  seniority_bands: string[]
-  target_functions: string[]
 }
 
 export function buildSystemPrompt(profile: ResearchPromptProfile, todayISO: string, currentMonth: number): string {
@@ -42,9 +44,6 @@ Rep context:
 ${productsBlock}
 - ICP: ${profile.icp_description}
 - Rep background: ${profile.rep_background}
-${profile.voice_samples
-  ? `- Rep voice samples — write the email in this exact style, matching sentence length, tone, and structure:\n${profile.voice_samples}`
-  : '- Voice samples: not provided. Write in a clear, direct, human voice.'}
 
 Research rules (how hard to look, and what counts as knowing something):
 - This brief is spoken aloud in discovery calls. A confidently stated wrong fact costs the rep credibility; a missing one costs nothing. When those trade off, omit.
@@ -60,7 +59,14 @@ Source and citation rules:
 - Never construct, guess at, or pattern-match a URL. Use only URLs returned by search.
 - Two different news items must never share a URL. If they do, at most one of them is correctly sourced — keep that one.
 
-${EMAIL_RULES}
+Fit rules — the verdict the rep decides on:
+- Your job here is to answer ONE question: is there something real at this organization that this rep's products speak to? The rep reads this verdict and decides whether to spend more of their own money looking for people to contact. Be useful, not encouraging.
+- Base the verdict on CONFIRMED actions and STATED needs found in your research — a migration underway, a published strategy, a named gap, a stated problem. Never on what an organization of this type probably needs.
+- Weigh perceived budget: evidence they can actually fund a purchase. Recent contract awards, published budget lines, funding rounds, hiring in the relevant function. If you find nothing, say "Unknown" — absence of evidence is not evidence of poverty, and saying so is honest.
+- DO NOT factor fiscal-year timing or buy-window status into this verdict. Timing answers "when", fit answers "whether". They are tracked separately, and mixing them produces a verdict that is really a calendar reading.
+- "weak" is a useful answer and is never penalised. Most organizations are a weak fit for any given product. Say weak when it is weak.
+- If the signals are too thin to judge, the verdict is "weak" — and what_would_change_it should name the missing information rather than restating that it is thin.
+- what_would_change_it names ONE concrete, findable fact that would most move this verdict. It tells the rep where to look next.
 
 Stats rules — the stats block is a corporate schema and does not fit every organization:
 - Government, public-sector, non-profit, educational and similar entities have no "revenue". Never report an operating budget, appropriation, or total spend in the revenue field as though it were revenue — that is the single most likely way this brief embarrasses the rep on a call.
@@ -73,28 +79,6 @@ Timing rules:
 - Public-sector bodies usually run a statutory fiscal year (US states are commonly July 1 – June 30); use the real one, not a corporate default
 - Ideal outreach window = 3–5 months before FY end (budget planning period)
 - window_status: "open" if today falls in that window, "approaching" if within 60 days of it, "closed" otherwise
-
-Decision maker rules:
-- Identify 3–5 individuals likely involved in a software purchase decision for this product
-- Use web search to find named individuals where publicly available (LinkedIn, press releases, company blog, earnings calls)
-- For each person: infer their likely priorities based on their role, public statements, and company context
-- Assign one of: champion, economic_buyer, gatekeeper, end_user, influencer
-- suggested_angle must be specific to this person at this company — never generic role advice
-- avatar_initials: first letter of first + last name (2 chars)
-
-Targeting tier rules — the rep's target profile:
-${profile.seniority_bands.length > 0
-  ? `- Target seniority bands: ${profile.seniority_bands.join(', ')}`
-  : '- Target seniority bands: not configured — use your judgment'}
-${profile.target_functions.length > 0
-  ? `- Target functions: ${profile.target_functions.join(', ')}`
-  : '- Target functions: not configured — use your judgment'}
-For each decision maker, assign a targeting_tier:
-- "prime_target": matches target seniority AND target function — this person is worth reaching out to directly
-- "intel_only": partial match or adjacent (e.g. right function but too senior/junior, or right seniority but different function) — useful context, not a direct outreach target
-- "low_signal": neither matches well — include for completeness but unlikely to be relevant
-Also provide a one-line tier_reasoning explaining your assignment (e.g. "VP-level in Data Engineering — matches both bands and functions")
-Use judgment, not a rigid formula. A CDO who owns data engineering is prime even if CDO isn't in the band list.
 
 Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
 {
@@ -130,22 +114,14 @@ Return ONLY valid JSON, no markdown fencing, no preamble, no trailing text:
     "window_status": "open | approaching | closed",
     "reasoning": "1 sentence"
   },
-  "decision_makers": [
-    {
-      "name": "string — real person name or null if not findable",
-      "title": "string",
-      "role": "champion | economic_buyer | gatekeeper | end_user | influencer",
-      "role_label": "Champion | Economic buyer | Gatekeeper | End user | Influencer",
-      "avatar_initials": "2 chars",
-      "cares_about": "string — their specific priorities at this company right now",
-      "suggested_angle": "string — specific angle for this person, not generic role advice",
-      "targeting_tier": "prime_target | intel_only | low_signal",
-      "tier_reasoning": "string — one-line rationale for the tier assignment"
-    }
-  ],
-  "email": {
-    "subject": "string",
-    "body": "string — under 120 words, in rep's voice"
+  "fit": {
+    "verdict": "strong | moderate | weak",
+    "rationale": "2–3 sentences: which confirmed actions or stated needs line up with which specific product capability. Name both sides concretely.",
+    "budget_signal": "what suggests they can fund this — recent awards, published budget lines, funding, hiring in the relevant function. 'Unknown' if nothing found.",
+    "what_would_change_it": "one line: the single concrete, findable fact that would most move this verdict"
   }
-}`
+}
+
+Do NOT return decision makers or an email. Those are separate steps the rep
+triggers later, only if this brief convinces them the account is worth it.`
 }

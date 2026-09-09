@@ -270,7 +270,14 @@ Each step should build and be independently revertable.
 1. Schema migration + backfill
 2. Strip email and decision makers from the stage 1 prompt; add the fit verdict
 3. `POST /api/decision-makers` with its own prompt and search budget
-4. UI — fit card, three-state decision makers section, per-stage refresh
+4. UI — fit card, three-state decision makers section, per-stage refresh, and
+   **the Draft email button must stop being gated on `brief.email`**. Step 2
+   stops stage 1 writing a draft, so `{brief?.email && <EmailDraftButton …/>}`
+   hides the button entirely on every new brief. `EmailDraftButton` needs to
+   accept a null `initialEmail` and generate on first open — it already has the
+   refresh path, so this is a nullable prop plus an empty state, not new
+   machinery. Tracked here because step 2 introduces the gap and step 4 closes
+   it; the branch is functionally short an email button in between.
 5. Remove metering
 6. Docs — `CLAUDE.md` rate-limiting section, `.env.local.example`, `BACKLOG.md`
 

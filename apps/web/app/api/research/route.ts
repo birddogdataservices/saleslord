@@ -8,7 +8,7 @@ import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import { generateStructured } from '@/lib/structured-output'
-import type { DmRole, CompanyStats, ProductPromptContext } from '@/lib/types'
+import type { CompanyStats, ProductPromptContext } from '@/lib/types'
 
 // The system prompt lives in lib/research-prompt.ts so the A/B harness in
 // scripts/ab-research.ts runs the exact prompt production uses.
@@ -17,6 +17,10 @@ const MODEL = 'claude-sonnet-4-6'
 // ─────────────────────────────────────────
 // Route handler
 // ─────────────────────────────────────────
+// Stage 1 of staged research: company assessment + the fit verdict the rep
+// gates on. Does NOT write decision makers or an email — those are later stages
+// the rep triggers. See docs/prospectlord/STAGED-RESEARCH.md.
+//
 // Job-tracked: withJob records this run in the jobs table (sidebar Jobs
 // section). The company name starts as the raw query and is updated to the
 // canonical name from the response when research succeeds.
@@ -42,11 +46,11 @@ async function run(request: Request): Promise<Response> {
     return Response.json({ error: 'query is required' }, { status: 400 })
   }
 
-  // 3. Fetch rep profile + the user's products + team targeting config
-  const [{ data: profile }, { data: productRows }, { data: teamConfigRow }] = await Promise.all([
+  // 3. Fetch rep profile + the user's products. No team_config here — seniority
+  // bands and target functions shape decision-maker tiering, which is stage 2.
+  const [{ data: profile }, { data: productRows }] = await Promise.all([
     adminClient.from('rep_profiles').select('*').eq('user_id', user.id).single(),
     adminClient.from('products').select('name, description, value_props, competitors').eq('user_id', user.id).order('created_at', { ascending: true }),
-    adminClient.from('team_config').select('seniority_bands, target_functions').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   // 4. Runaway guard — metered calls per rolling 24h. Checked after the profile
@@ -89,9 +93,6 @@ async function run(request: Request): Promise<Response> {
       products,
       icp_description:  profile.icp_description ?? '',
       rep_background:   profile.rep_background  ?? '',
-      voice_samples:    profile.voice_samples   ?? '',
-      seniority_bands:  (teamConfigRow?.seniority_bands  as string[]) ?? [],
-      target_functions: (teamConfigRow?.target_functions as string[]) ?? [],
     },
     today.toISOString().split('T')[0],
     today.getMonth() + 1
@@ -213,7 +214,9 @@ async function run(request: Request): Promise<Response> {
       outreach_angle: parsed.outreach_angle ?? null,
       stats,
       timing:         parsed.timing ?? null,
-      email:          parsed.email ?? null,
+      fit:            parsed.fit ?? null,
+      // email is deliberately not written. Stage 1 no longer drafts one —
+      // refresh-email owns that, and the rep asks for it when they want it.
     })
     .select()
     .single()
@@ -228,53 +231,11 @@ async function run(request: Request): Promise<Response> {
     .eq('prospect_id', prospect.id)
     .neq('id', brief.id)
 
-  // Snapshot existing DM ids before inserting new ones, then delete after —
-  // same insert-first pattern: new DMs are visible immediately if process dies mid-cleanup
-  const { data: existingDMs } = await adminClient
-    .from('decision_makers').select('id').eq('prospect_id', prospect.id)
-  const existingDMIds = (existingDMs ?? []).map(d => d.id)
-
-  const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
-    champion:       { bg: '#E1F5EE', text: '#085041' },
-    economic_buyer: { bg: '#E6F1FB', text: '#0C447C' },
-    gatekeeper:     { bg: '#FAECE7', text: '#712B13' },
-    end_user:       { bg: '#EEEDFE', text: '#3C3489' },
-    influencer:     { bg: '#FAEEDA', text: '#633806' },
-    custom:         { bg: '#F0EEE9', text: '#6B6A64' },
-  }
-
-  const VALID_TIERS = new Set(['prime_target', 'intel_only', 'low_signal'])
-
-  const decisionMakers = (parsed.decision_makers ?? []).map((dm: any, i: number) => {
-    const role: DmRole = dm.role ?? 'custom'
-    const colors = ROLE_COLORS[role] ?? ROLE_COLORS.custom
-    const tier = VALID_TIERS.has(dm.targeting_tier) ? dm.targeting_tier : 'prime_target'
-    return {
-      prospect_id:       prospect.id,
-      name:              dm.name ?? null,
-      title:             dm.title ?? null,
-      role,
-      role_label:        dm.role_label ?? role,
-      avatar_initials:   dm.avatar_initials ?? '??',
-      avatar_color_bg:   colors.bg,
-      avatar_color_text: colors.text,
-      cares_about:       dm.cares_about ?? null,
-      suggested_angle:   dm.suggested_angle ?? null,
-      sort_order:        i,
-      targeting_tier:    tier,
-      tier_reasoning:    dm.tier_reasoning ?? null,
-    }
-  })
-
-  if (decisionMakers.length > 0) {
-    const { error: dmError } = await adminClient.from('decision_makers').insert(decisionMakers)
-    if (dmError) console.error('[research] Decision maker insert error:', dmError)
-  }
-
-  // Delete old DMs now that new ones are safely written
-  if (existingDMIds.length > 0) {
-    await adminClient.from('decision_makers').delete().in('id', existingDMIds)
-  }
+  // Decision makers are NOT written here. Finding people is stage 2, which the
+  // rep triggers from the brief once the fit verdict convinces them the account
+  // is worth it — see the product principle in the root CLAUDE.md. Existing
+  // decision makers are deliberately left alone: a stage 1 refresh should not
+  // discard people who were already found, and dm_researched_at stays as it was.
 
   // Update last_refreshed_at on prospect
   await adminClient
@@ -299,7 +260,6 @@ async function run(request: Request): Promise<Response> {
     prospect_id: prospect.id,
     prospect,
     brief,
-    decision_makers: decisionMakers,
     cost_usd: cost,
   })
 }
