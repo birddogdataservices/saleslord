@@ -15,6 +15,36 @@ A pnpm monorepo with one deployed Next.js app hosting all products:
   rep's territory that plausibly fit their ICP. Not yet built.
   See [`docs/territorylord/CLAUDE.md`](docs/territorylord/CLAUDE.md).
 
+## Product principle — nothing is generated blindly
+
+**The rep is a human in the loop, not a recipient of output.** ProspectLord
+exists to help a rep progressively qualify an account, and every expensive or
+generative step waits for them to ask for it.
+
+The qualification path is deliberately staged:
+
+1. **Assess the company and the need** — is there something real here?
+2. **Identify potential decision makers** — only if stage 1 looked compelling
+3. **Design the outreach** — only once there is someone worth writing to
+
+**Nothing beyond the initial brief gets generated unless the rep asks for it.**
+Decision makers, emails, pitch openers, case-study matches and update scans are
+all rep-triggered. A stage never auto-runs because a previous one finished.
+
+What this means when building:
+
+- Never chain generation steps. Finishing stage 1 does not start stage 2.
+- An unrun stage renders an **invitation** — a button plus a caption explaining
+  what it does and roughly what it costs — never an empty section, a spinner, or
+  a silently missing card.
+- Every generative action states its cost before the rep commits to it
+  (`lib/costs.ts`), because they are spending their own Anthropic key.
+- Prefer showing the rep less and letting them ask, over producing more on
+  their behalf. Unasked-for output costs money, and a brief full of material
+  nobody requested is harder to trust, not easier.
+- Declining to answer is a valid result. "No named individuals found publicly"
+  is a correct outcome, not a failure state, and must be rendered as one.
+
 ## Naming and the rename path
 
 - **SalesLord** — the repo name (stays forever — it's the platform monorepo name).
