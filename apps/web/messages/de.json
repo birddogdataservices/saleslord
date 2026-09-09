@@ -116,7 +116,9 @@
     "refreshDraft": "↺ Entwurf aktualisieren",
     "refreshing": "Wird aktualisiert…",
     "toastRefreshed": "E-Mail aktualisiert · {cost}",
-    "toastRefreshFailed": "E-Mail konnte nicht aktualisiert werden."
+    "toastRefreshFailed": "E-Mail konnte nicht aktualisiert werden.",
+    "generating": "E-Mail wird verfasst…",
+    "noDraftYet": "Noch kein Entwurf. Nutzen Sie unten Aktualisieren, um einen zu erzeugen."
   },
   "PitchOpener": {
     "trigger": "Pitch-Einstieg →",
@@ -143,5 +145,22 @@
     "generating": "Wird generiert…",
     "toastGenerated": "Einstieg generiert · {cost}",
     "toastGenerateFailed": "Einstieg konnte nicht generiert werden."
+  },
+  "Fit": {
+    "title": "Produkt-Passung",
+    "budget": "Budget-Signal:",
+    "whatWouldChange": "Was daran etwas ändern würde:"
+  },
+  "DecisionMakers": {
+    "title": "Entscheider",
+    "inviteBody": "Suchen Sie nach namentlich genannten Personen in dieser Organisation, bewertet anhand der Zielhierarchie und Zielfunktionen Ihres Teams. Lohnt sich, sobald das Unternehmen selbst zu passen scheint.",
+    "find": "Entscheider suchen",
+    "searching": "Suche nach Entscheidern…",
+    "searchAgain": "Erneut suchen",
+    "refresh": "Aktualisieren",
+    "failed": "Entscheider konnten nicht gesucht werden. Bitte erneut versuchen.",
+    "foundCount": "{count, plural, one {# Entscheider gefunden.} other {# Entscheider gefunden.}}",
+    "noneTitle": "Keine öffentlich benannten Personen gefunden.",
+    "noneBody": "Die Suche wurde durchgeführt und konnte niemanden in dieser Organisation belegen. Das ist eine echte Antwort, kein Fehler — die öffentliche Berichterstattung ist bei manchen Organisationen dünn."
   }
 }

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import type { DmRole, TargetingTier } from './types'
+import type { DmRole, TargetingTier, FitVerdict } from './types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -136,6 +136,25 @@ export const TIER_COLORS: Record<TargetingTier, { bg: string; text: string }> = 
   prime_target: { bg: '#E8F4DE', text: '#2A6010' },
   intel_only:   { bg: '#E6F1FB', text: '#0C447C' },
   low_signal:   { bg: '#F0EEE9', text: '#6B6A64' },
+}
+
+// ─────────────────────────────────────────
+// Stage 1 fit verdict
+// ─────────────────────────────────────────
+// Literal hex for the same reason as TIER_COLORS — the PDF cannot resolve var().
+// Green / blue / neutral, matching the tier palette so a rep reads the two the
+// same way. "weak" is deliberately neutral rather than red: a weak fit is a
+// normal, useful answer, not a failure.
+export const FIT_COLORS: Record<FitVerdict['verdict'], { bg: string; text: string }> = {
+  strong:   { bg: '#E8F4DE', text: '#2A6010' },
+  moderate: { bg: '#E6F1FB', text: '#0C447C' },
+  weak:     { bg: '#F0EEE9', text: '#6B6A64' },
+}
+
+export const FIT_LABELS: Record<FitVerdict['verdict'], string> = {
+  strong:   'Strong fit',
+  moderate: 'Moderate fit',
+  weak:     'Weak fit',
 }
 
 // Sort order: prime targets first, low signal last.

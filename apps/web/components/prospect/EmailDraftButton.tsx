@@ -10,7 +10,10 @@ import type { EmailDraft } from '@/lib/types'
 type ProductOption = { id: string; name: string }
 
 type Props = {
-  initialEmail: EmailDraft
+  // null when stage 1 has not drafted one. Staged research stopped writing an
+  // email during company research — refresh-email owns drafting, and the rep
+  // asks for it. The modal generates on first open when this is null.
+  initialEmail: EmailDraft | null
   prospectId: string
   products: ProductOption[]   // list of available products for the selector
   outputLanguageOverride: string | null   // sticky per-prospect email language; null = profile default
@@ -28,7 +31,7 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
   const tl = useTranslations('Language')
   const format = useFormatter()
   const [open,              setOpen]              = useState(false)
-  const [email,             setEmail]             = useState<EmailDraft>(initialEmail)
+  const [email,             setEmail]             = useState<EmailDraft | null>(initialEmail)
   const [refreshing,        setRefreshing]        = useState(false)
   const [copied,            setCopied]            = useState(false)
   const [selectedProductId, setSelectedProductId] = useState<string>('')  // '' = auto
@@ -37,8 +40,8 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
     isSupportedLocale(outputLanguageOverride) ? outputLanguageOverride : PROFILE_DEFAULT
   )
 
-  const slopHits  = detectSlop(email.body)
-  const bodyWords = wordCount(email.body)
+  const slopHits  = detectSlop(email?.body ?? '')
+  const bodyWords = wordCount(email?.body ?? '')
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -68,6 +71,7 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
   }, [prospectId, selectedProductId, language, t, tc, format])
 
   const handleCopy = useCallback(() => {
+    if (!email) return
     const text = `Subject: ${email.subject}\n\n${email.body}`
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
@@ -79,7 +83,12 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
     <>
       {/* Trigger button */}
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true)
+          // No draft yet (staged research does not write one) — generate on the
+          // rep's first open rather than making them press refresh on a blank modal.
+          if (!email && !refreshing) handleRefresh()
+        }}
         className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium"
         style={{ border: 'none', background: 'var(--sl-text)', color: '#F0EDE6' }}
       >
@@ -112,8 +121,8 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
                 {t('suggestedEmail')}
               </span>
               <div className="flex items-center gap-2">
-                {/* Word count */}
-                <span
+                {/* Word count — meaningless until a draft exists */}
+                {email && <span
                   className="text-[10px] px-2 py-0.5 rounded-full"
                   style={{
                     background: bodyWords > 75 ? 'var(--sl-coral-bg)' : 'var(--sl-green-bg)',
@@ -121,7 +130,7 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
                   }}
                 >
                   {bodyWords > 75 ? t('wordsOverLimit', { count: bodyWords }) : t('wordsOnTarget', { count: bodyWords })}
-                </span>
+                </span>}
                 {/* Slop badge */}
                 {slopHits.length > 0 && (
                   <span
@@ -145,6 +154,15 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
             {/* Email content */}
             <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
 
+              {/* No draft yet — generating on open, or the generation failed and
+                  the rep can retry from the footer. */}
+              {!email && (
+                <p className="text-[12px] py-6 text-center" style={{ color: 'var(--sl-text2)' }}>
+                  {refreshing ? t('generating') : t('noDraftYet')}
+                </p>
+              )}
+
+              {email && <>
               {/* Subject */}
               <div>
                 <div
@@ -179,6 +197,7 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
                   {email.body}
                 </div>
               </div>
+              </>}
             </div>
 
             {/* Actions footer */}

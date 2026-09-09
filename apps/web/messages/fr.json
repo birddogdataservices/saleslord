@@ -116,7 +116,9 @@
     "refreshDraft": "↺ Actualiser le brouillon",
     "refreshing": "Actualisation…",
     "toastRefreshed": "E-mail actualisé · {cost}",
-    "toastRefreshFailed": "Échec de l'actualisation de l'e-mail."
+    "toastRefreshFailed": "Échec de l'actualisation de l'e-mail.",
+    "generating": "Rédaction d'un e-mail…",
+    "noDraftYet": "Pas encore de brouillon. Utilisez Actualiser ci-dessous pour en générer un."
   },
   "PitchOpener": {
     "trigger": "Accroche de pitch →",
@@ -143,5 +145,22 @@
     "generating": "Génération…",
     "toastGenerated": "Accroche générée · {cost}",
     "toastGenerateFailed": "Échec de la génération de l'accroche."
+  },
+  "Fit": {
+    "title": "Adéquation produit",
+    "budget": "Signal budgétaire :",
+    "whatWouldChange": "Ce qui changerait la donne :"
+  },
+  "DecisionMakers": {
+    "title": "Décideurs",
+    "inviteBody": "Recherchez des personnes nommées dans cette organisation, classées selon les niveaux hiérarchiques et fonctions ciblés par votre équipe. À faire une fois que l'entreprise elle-même semble pertinente.",
+    "find": "Trouver les décideurs",
+    "searching": "Recherche de décideurs…",
+    "searchAgain": "Relancer la recherche",
+    "refresh": "Actualiser",
+    "failed": "Impossible de rechercher les décideurs. Veuillez réessayer.",
+    "foundCount": "{count, plural, one {# décideur trouvé.} other {# décideurs trouvés.}}",
+    "noneTitle": "Aucune personne identifiable publiquement.",
+    "noneBody": "La recherche a été effectuée sans pouvoir sourcer qui que ce soit dans cette organisation. C'est une vraie réponse, pas une erreur — la couverture publique est mince pour certaines organisations."
   }
 }
