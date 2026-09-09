@@ -43,6 +43,7 @@
     "title": "Jobs",
     "running": "{count} laufen",
     "kindResearch": "Recherche",
+    "kindDecisionMakers": "Entscheider",
     "kindEmailDraft": "E-Mail-Entwurf",
     "kindPitchOpener": "Pitch-Einstieg",
     "kindCheckUpdates": "Updates prüfen",

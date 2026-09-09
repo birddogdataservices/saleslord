@@ -43,6 +43,7 @@
     "title": "Tarefas",
     "running": "{count} em andamento",
     "kindResearch": "Pesquisa",
+    "kindDecisionMakers": "Decisores",
     "kindEmailDraft": "Rascunho de e-mail",
     "kindPitchOpener": "Abertura de pitch",
     "kindCheckUpdates": "Verificar novidades",

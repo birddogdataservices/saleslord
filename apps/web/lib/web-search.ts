@@ -24,6 +24,14 @@ export const WEB_SEARCH_TOOL_TYPE = 'web_search_20260209'
 export const RESEARCH_MAX_USES = 15
 export const CHECK_UPDATES_MAX_USES = 8
 
+// Finding named people is search-hungry in a different way than company
+// research: many narrow lookups (leadership page, press release, speaker list,
+// then verification) rather than a few broad ones. In the monolith this work
+// had no budget of its own at all — it competed with company research inside
+// one call, which is the leading suspect for the confabulation measured on
+// 2026-09-08. Sized generously on purpose; verification costs searches.
+export const DECISION_MAKERS_MAX_USES = 12
+
 export function webSearchTool(maxUses: number) {
   return { type: WEB_SEARCH_TOOL_TYPE, name: 'web_search', max_uses: maxUses }
 }

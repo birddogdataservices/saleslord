@@ -8,6 +8,7 @@ import type { Job, JobKind } from '@/lib/types'
 // Each job kind → its catalog key under the Jobs namespace.
 const KIND_KEYS: Record<JobKind, string> = {
   research:         'kindResearch',
+  decision_makers:  'kindDecisionMakers',
   email_draft:      'kindEmailDraft',
   pitch_opener:     'kindPitchOpener',
   check_updates:    'kindCheckUpdates',

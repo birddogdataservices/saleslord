@@ -43,6 +43,7 @@
     "title": "Jobs",
     "running": "{count} running",
     "kindResearch": "Research",
+    "kindDecisionMakers": "Decision makers",
     "kindEmailDraft": "Email draft",
     "kindPitchOpener": "Pitch opener",
     "kindCheckUpdates": "Update check",
