@@ -35,6 +35,7 @@ Items are roughly priority-ordered within each section.
 - [ ] Prospect search — sidebar search is client-side filter; works fine for < 100 prospects
 - [ ] Topbar company meta — show headcount / stage from stats below company name (already partially done)
 - [ ] Empty state for prospects with no brief yet (beyond current placeholder text)
+- [ ] Admin UI for per-rep `daily_call_limit` override — column is manual-edit only at first (see STAGED-RESEARCH.md)
 - [ ] **ZoomInfo integration for decision makers** — the staged decision-maker call finds named people via web search only, and under the Phase 0 sourcing rules it will correctly return "no named individuals found publicly" more often than before. A contact-data provider would turn that empty state into real coverage, and would let the model verify names it found rather than trusting a single web source. Worth revisiting once the staged research split has settled; the decision-maker stage is already an isolated call, so wiring a provider into it does not touch company research.
 
 ## 🤖 Model strategy (revenue + quality)

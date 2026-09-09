@@ -154,7 +154,7 @@ at the repo root — Next.js looks for it relative to the app directory.
 
 Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v1.5.0** (usage accounting split from rate limiting; teammate login-link invites)
+Current version: **v1.6.0** (targeting tiers visible; prompt caching; research effort + sourcing rules; staged research design)
 
 Known gap: there is no v1.0.0 tag — the TerritoryLord session (documented as
 v1.0.0 in HANDOFF.md) was never tagged. Tags jump v0.9.0 → v1.1.0.

@@ -159,23 +159,43 @@ kind needs no migration.
 
 ## Metering
 
-`DAILY_CALL_LIMIT` is scrapped. It was a budget cap on a BYOK product, where
-every rep already pays their own card, and splitting into stages would have made
-it arbitrary anyway (one brief = two metered calls, so 25/day became ~12
-pipelines).
+**Settled: the limit stays, raised to 50/day, with a per-rep manual override.**
 
-Removals: `checkDailyLimit`, `METERED_ENDPOINTS`, `dailyCallLimit`, `LimitCheck`
-from `lib/api-usage.ts`; the three call sites in `research`, `check-updates` and
-`case-studies/match`; `DAILY_CALL_LIMIT` from `.env.local.example` and the root
-`CLAUDE.md` env list; and the "Rate limiting" section of `CLAUDE.md`.
+It stops being a budget cap and becomes a runaway guard. On a BYOK product each
+rep pays their own card, so the limit is not there to control spend — it is there
+so a retry loop or a misconfigured client cannot make unbounded calls before
+anyone notices. 50/day is high enough that it should never bind in real use:
+staged, one full pipeline is two metered calls, so 50 allows ~25 complete
+prospects a day, well beyond a realistic rep's throughput.
 
-`lib/api-usage.ts` survives as the cost ledger — `logUsage`, `USAGE_ENDPOINT` —
-which was always the valuable half. Gains `USAGE_ENDPOINT.DECISION_MAKERS`.
+Changes:
 
-> **Open question — runaway guard.** Removing the limit leaves nothing to stop a
-> retry loop or a misconfigured client from making unbounded calls. Recommend
-> keeping a deliberately high ceiling (~200/day) that never binds in real use and
-> exists only to catch a loop — a circuit breaker, not a budget. Needs a yes/no.
+- `DAILY_CALL_LIMIT` default `25` → `50`.
+- New nullable column for the override:
+  ```sql
+  alter table rep_profiles add column if not exists daily_call_limit integer;
+  -- NULL = use the DAILY_CALL_LIMIT env default. Set per rep to override.
+  ```
+- `checkDailyLimit` reads `rep_profiles.daily_call_limit` and falls back to the
+  env default when it is null. It already fetches the profile in every calling
+  route, so this costs no extra query if the value is passed in.
+- `METERED_ENDPOINTS` gains `decision_makers` — it is a search-heavy Sonnet call
+  and belongs in the same bucket as research and check-updates.
+- Email, pitch opener and resolve stay **unmetered**, unchanged. They are cheap
+  Haiku calls the rep is meant to iterate on freely; that rationale holds just as
+  well at 50 as it did at 25.
+
+Overriding is a manual admin action against the column for now. A UI control on
+`/admin/users` is a reasonable follow-up but is not required for this work —
+noted in `BACKLOG.md` rather than built here.
+
+`lib/api-usage.ts` therefore keeps both halves: the cost ledger (`logUsage`,
+`USAGE_ENDPOINT`) and the guard (`checkDailyLimit`, `METERED_ENDPOINTS`). The
+2026-09-08 split between them still stands and is what makes raising the ceiling
+safe — the cheap routes cannot consume it.
+
+`CLAUDE.md`'s "Rate limiting" section needs updating to describe a guard rather
+than a budget, and to document the per-rep override.
 
 ---
 
@@ -261,10 +281,14 @@ follow it.
 
 ## What this does not change
 
-- The A/B harness and `MODEL-UPGRADES.md` protocol still apply — but note the
-  harness currently exercises the *monolithic* prompt. Once stage 1 is company-
-  only, the harness needs to follow, or it will be measuring a prompt that no
-  longer ships. Re-baselining should happen after the split, not before.
+- The A/B harness and `MODEL-UPGRADES.md` protocol still apply — but the harness
+  currently exercises the *monolithic* prompt. Once stage 1 is company-only it
+  would be measuring a prompt that no longer ships. **Settled: re-baseline after
+  the split, not before.** The harness must first be updated to run stage 1 and
+  stage 2 as separate measured calls, so cost, latency and the accuracy scorecard
+  are reported per stage — a combined number would hide which stage regressed.
+  This also means the Phase 0 prompt changes remain unmeasured until then, which
+  is an accepted, temporary state rather than an oversight.
 - Prompt caching, the cost ledger, targeting tier presentation, and the Phase 0
   sourcing rules all carry over unchanged.
 - `check-updates` keeps its current scope: new developments about the company. It
