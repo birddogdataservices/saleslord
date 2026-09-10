@@ -101,7 +101,8 @@
     "noResearchBody": "Die Recherche läuft möglicherweise noch oder wurde unterbrochen. Du kannst sie unten erneut ausführen.",
     "snapshot": "Überblick",
     "strategicInitiatives": "Strategische Initiativen",
-    "painSignals": "Schmerzsignale"
+    "painSignals": "Schmerzsignale",
+    "researched": "Recherchiert am {date}"
   },
   "Email": {
     "draftEmail": "E-Mail verfassen →",

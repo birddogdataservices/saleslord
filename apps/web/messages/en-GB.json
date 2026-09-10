@@ -101,7 +101,8 @@
     "noResearchBody": "Research may still be running, or it was interrupted. You can run it again below.",
     "snapshot": "Snapshot",
     "strategicInitiatives": "Strategic initiatives",
-    "painSignals": "Pain signals"
+    "painSignals": "Pain signals",
+    "researched": "Researched {date}"
   },
   "Email": {
     "draftEmail": "Draft email →",

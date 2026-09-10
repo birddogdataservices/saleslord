@@ -151,10 +151,16 @@ async function run(request: Request): Promise<Response> {
     )
   }
 
-  // 5. Determine "last checked" date — use most recent blurb date, or original research date
+  // 5. Determine the "search for news after this date" cutoff.
+  //
+  // Order matters. last_checked_at covers scans that found nothing — without it
+  // a fruitless check would be invisible here and the next scan would re-cover
+  // the same ground. The newest blurb is the fallback for prospects checked
+  // before that column existed, and the brief's own created_at is the floor for
+  // a prospect that has only ever been researched.
   const lastCheckedAt =
+    prospect.last_checked_at ??
     lastUpdateRes.data?.created_at ??
-    prospect.last_refreshed_at ??
     brief.created_at
 
   const lastCheckedLabel = new Date(lastCheckedAt).toLocaleDateString('en-US', {
@@ -283,11 +289,13 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     cacheWriteTokens,
   })
 
-  // 10. If no relevant updates, return early — no blurb written
+  // 10. If no relevant updates, return early — no blurb written. Still stamp
+  // last_checked_at: "we looked and there was nothing new" is worth knowing,
+  // and without this a fruitless check leaves no trace anywhere.
   if (!parsed.found || !parsed.summary) {
     await adminClient
       .from('prospects')
-      .update({ last_refreshed_at: new Date().toISOString() })
+      .update({ last_checked_at: new Date().toISOString() })
       .eq('id', prospect_id)
     return Response.json({ found: false, cost_usd: cost })
   }
@@ -313,10 +321,12 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     return Response.json({ error: 'Failed to save update' }, { status: 500 })
   }
 
-  // Update last_refreshed_at
+  // Stamp the news scan, NOT the brief. This route does not rebuild the brief,
+  // and writing last_refreshed_at here is what made "last checked" ambiguous:
+  // one column recording two different events.
   await adminClient
     .from('prospects')
-    .update({ last_refreshed_at: new Date().toISOString() })
+    .update({ last_checked_at: new Date().toISOString() })
     .eq('id', prospect_id)
 
   return Response.json({ found: true, update, cost_usd: cost })

@@ -101,7 +101,8 @@
     "noResearchBody": "La investigación puede estar aún en curso o se interrumpió. Puedes ejecutarla de nuevo abajo.",
     "snapshot": "Resumen",
     "strategicInitiatives": "Iniciativas estratégicas",
-    "painSignals": "Señales de dolor"
+    "painSignals": "Señales de dolor",
+    "researched": "Investigado el {date}"
   },
   "Email": {
     "draftEmail": "Redactar email →",

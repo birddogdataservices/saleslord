@@ -196,8 +196,24 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
   )
 }
 
+// Compact brief age: "3d", "6w", "4mo". Locale-neutral by design — it sits in a
+// 230px sidebar next to a month abbreviation, so it has to stay two or three
+// characters. Stale at 30 days.
+function briefAge(iso: string | null): { label: string; stale: boolean } | null {
+  if (!iso) return null
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  if (!Number.isFinite(days) || days < 0) return null
+  const label =
+    days < 1   ? 'today'
+    : days < 14 ? `${days}d`
+    : days < 60 ? `${Math.floor(days / 7)}w`
+    :             `${Math.floor(days / 30)}mo`
+  return { label, stale: days >= 30 }
+}
+
 function ProspectLink({ p, isActive, muted = false }: { p: ProspectSidebarItem; isActive: boolean; muted?: boolean }) {
   const { dot } = windowStatusColor(p.window_status)
+  const age = briefAge(p.last_refreshed_at)
   return (
     <Link
       href={`/prospects/${p.id}`}
@@ -216,6 +232,18 @@ function ProspectLink({ p, isActive, muted = false }: { p: ProspectSidebarItem; 
       >
         {p.name}
       </span>
+      {/* Brief age, so staleness is visible across the whole pipeline rather
+          than one prospect at a time. Amber past 30 days: old enough that the
+          rep should re-run before leaning on it in a conversation. */}
+      {age && (
+        <span
+          className="text-[10px] flex-shrink-0"
+          style={{ color: muted ? '#333' : age.stale ? '#8a6d2a' : '#484844' }}
+          title={`Researched ${new Date(p.last_refreshed_at!).toLocaleDateString()}`}
+        >
+          {age.label}
+        </span>
+      )}
       {p.fy_end && (
         <span className="text-[11px] flex-shrink-0" style={{ color: muted ? '#333' : '#484844' }}>
           {p.fy_end}

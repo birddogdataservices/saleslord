@@ -5,16 +5,56 @@ import type { ProspectUpdate } from '@/lib/types'
 
 type Props = {
   updates: ProspectUpdate[]
+  // When the current brief was written. Updates older than this were folded in
+  // by the re-research that produced it.
+  briefCreatedAt: string | null
 }
 
-export default function UpdateBlurbs({ updates }: Props) {
+// Update blurbs sit above the brief, which reads as "newer than what follows".
+// That was a lie after a re-research: research re-gathers recent news into the
+// brief but never touches prospect_updates, so blurbs from before the rebuild
+// kept sitting on top, duplicating what the fresh brief already said and
+// looking like the more current of the two.
+//
+// Nothing is deleted — an account's trajectory over time is worth keeping.
+// Anything predating the current brief is just moved behind a toggle and
+// labelled for what it is: history, already reflected in the brief above.
+export default function UpdateBlurbs({ updates, briefCreatedAt }: Props) {
   if (updates.length === 0) return null
+
+  const briefTime = briefCreatedAt ? new Date(briefCreatedAt).getTime() : 0
+  const current    = updates.filter(u => new Date(u.created_at).getTime() >  briefTime)
+  const superseded = updates.filter(u => new Date(u.created_at).getTime() <= briefTime)
 
   return (
     <div className="flex flex-col gap-[10px]">
-      {updates.map(update => (
+      {current.map(update => (
         <UpdateCard key={update.id} update={update} />
       ))}
+      {superseded.length > 0 && <SupersededUpdates updates={superseded} />}
+    </div>
+  )
+}
+
+function SupersededUpdates({ updates }: { updates: ProspectUpdate[] }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-[11px] transition-colors"
+        style={{ color: 'var(--sl-text3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+      >
+        {open ? '▾' : '▸'} {updates.length} earlier update{updates.length !== 1 ? 's' : ''}, already folded into the brief
+      </button>
+      {open && (
+        <div className="flex flex-col gap-[10px] mt-[10px] opacity-60">
+          {updates.map(update => (
+            <UpdateCard key={update.id} update={update} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
