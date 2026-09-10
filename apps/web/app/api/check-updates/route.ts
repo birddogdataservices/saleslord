@@ -8,7 +8,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
-import { webSearchTool, CHECK_UPDATES_MAX_USES } from '@/lib/web-search'
+import {
+  webSearchTool, CHECK_UPDATES_DEADLINE_MS,
+  ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
+} from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -95,11 +98,7 @@ async function run(request: Request): Promise<Response> {
 
   const adminClient = createAdminClient()
 
-  // 2. Rate limit — shared 24h bucket across the metered endpoints
-  const limit = await checkDailyLimit(adminClient, user.id)
-  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
-
-  // 3. Parse body
+  // 2. Parse body
   const { prospect_id } = await request.json() as { prospect_id?: string }
   if (!prospect_id) return Response.json({ error: 'prospect_id is required' }, { status: 400 })
 
@@ -128,6 +127,11 @@ async function run(request: Request): Promise<Response> {
   const brief       = briefRes.data
   const profile     = profileRes.data
   const products: ProductPromptContext[] = productRes.data ?? []
+
+  // Runaway guard — checked after the profile load so the rep's
+  // daily_call_limit override applies. See METERED_ENDPOINTS.
+  const limit = await checkDailyLimit(adminClient, user.id, profile?.daily_call_limit)
+  if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 
   // BYOK hard gate
   const storedKey = profile?.anthropic_api_key?.trim()
@@ -180,7 +184,12 @@ ${existingNewsText}
 Search for developments at ${prospect.name} that occurred after ${lastCheckedLabel} and are relevant to the rep's product. Return {"found": false} if nothing meaningful is new.`
 
   // 7. Run agentic web search loop
-  const client = new Anthropic({ apiKey: userApiKey })
+  const startedAt = Date.now()
+  const client = new Anthropic({
+    apiKey: userApiKey,
+    timeout: ANTHROPIC_TIMEOUT_MS,
+    maxRetries: ANTHROPIC_MAX_RETRIES,
+  })
   // Rep-facing (the update summary is read by the rep) → always profile.locale.
   const systemPrompt = buildSystemPrompt(
     products,
@@ -198,7 +207,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     max_tokens: 1024,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool(CHECK_UPDATES_MAX_USES)] as any,
+    tools: [webSearchTool()] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
@@ -212,7 +221,11 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   // re-sending (no tool_results, no extra user message).
   const MAX_CONTINUATIONS = 4  // check-updates is narrower than research
   let continuations = 0
-  while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+  while (
+    response.stop_reason === 'pause_turn' &&
+    continuations < MAX_CONTINUATIONS &&
+    Date.now() - startedAt < CHECK_UPDATES_DEADLINE_MS
+  ) {
     continuations++
     messages.push({ role: 'assistant', content: response.content })
     response = await client.messages.create({
@@ -220,7 +233,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
       max_tokens: 1024,
       system: systemPrompt,
       cache_control: { type: 'ephemeral' },
-      tools: [webSearchTool(CHECK_UPDATES_MAX_USES)] as any,
+      tools: [webSearchTool()] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens

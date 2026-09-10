@@ -8,6 +8,9 @@ type Props = {
   query: string
 }
 
+// Stage 1 refresh only. Re-runs company research and the fit verdict; decision
+// makers are deliberately left alone, so a rep can refresh company facts without
+// paying to re-discover people. The decision-makers panel has its own refresh.
 export default function RebuildBriefButton({ query }: Props) {
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'confirm' | 'loading'>('idle')
@@ -17,7 +20,7 @@ export default function RebuildBriefButton({ query }: Props) {
     if (state !== 'confirm') return
 
     setState('loading')
-    const toastId = toast.loading('Rebuilding brief…', { duration: 90000 })
+    const toastId = toast.loading('Refreshing company research…', { duration: 120000 })
 
     try {
       const res = await fetch('/api/research', {
@@ -29,12 +32,12 @@ export default function RebuildBriefButton({ query }: Props) {
       toast.dismiss(toastId)
 
       if (!res.ok) {
-        toast.error(data.error ?? 'Rebuild failed. Please try again.')
+        toast.error(data.error ?? 'Refresh failed. Please try again.')
         setState('idle')
         return
       }
 
-      toast.success('Brief rebuilt.')
+      toast.success('Company research refreshed.')
       router.refresh()
     } catch {
       toast.dismiss(toastId)
@@ -56,7 +59,7 @@ export default function RebuildBriefButton({ query }: Props) {
         color:      state === 'confirm' ? 'var(--sl-amber-t)' : 'var(--sl-text3)',
       }}
     >
-      {state === 'loading' ? 'Rebuilding…' : state === 'confirm' ? 'Confirm rebuild?' : 'Rebuild Brief'}
+      {state === 'loading' ? 'Refreshing…' : state === 'confirm' ? 'Confirm refresh?' : 'Refresh company'}
     </button>
   )
 }

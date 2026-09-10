@@ -6,7 +6,8 @@ import { notFound } from 'next/navigation'
 import TimingBar from '@/components/prospect/TimingBar'
 import StatCards from '@/components/prospect/StatCards'
 import NewsCard from '@/components/prospect/NewsCard'
-import DecisionMakers from '@/components/prospect/DecisionMakers'
+import DecisionMakersPanel from '@/components/prospect/DecisionMakersPanel'
+import FitCard from '@/components/prospect/FitCard'
 import RightColumn from '@/components/prospect/RightColumn'
 import EmailDraftButton from '@/components/prospect/EmailDraftButton'
 import PitchOpenerButton from '@/components/prospect/PitchOpenerButton'
@@ -113,9 +114,12 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
               outputLanguageOverride={prospect.output_language_override}
             />
           )}
-          {brief?.email && (
+          {/* Always offered once a brief exists. Stage 1 no longer drafts an
+              email, so initialEmail is null on new briefs and the modal
+              generates one on demand. */}
+          {brief && (
             <EmailDraftButton
-              initialEmail={brief.email}
+              initialEmail={brief.email ?? null}
               prospectId={id}
               products={products}
               outputLanguageOverride={prospect.output_language_override}
@@ -217,8 +221,17 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
                 {/* News — above decision makers */}
                 {(brief.news?.length ?? 0) > 0 && <NewsCard news={brief.news} />}
 
-                {/* Decision makers */}
-                {dms.length > 0 && <DecisionMakers decisionMakers={dms} />}
+                {/* Product fit — the verdict the rep gates stage 2 on. Sits
+                    directly above the decision-makers panel so the decision and
+                    its evidence are adjacent. */}
+                <FitCard fit={brief.fit ?? null} />
+
+                {/* Decision makers — invitation, list, or "found nobody" */}
+                <DecisionMakersPanel
+                  prospectId={id}
+                  dms={dms}
+                  dmResearchedAt={prospect.dm_researched_at ?? null}
+                />
               </div>
 
               {/* RIGHT column — 340px fixed */}

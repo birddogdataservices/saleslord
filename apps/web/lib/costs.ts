@@ -15,6 +15,10 @@ export const COST_HINTS = {
   // Sonnet 4.6 single call, re-research with diff — similar to research
   refresh: 'roughly $0.10–$0.40 from your Anthropic key',
 
+  // Sonnet 4.6, narrower search loop than research (4 continuations, 12 searches).
+  // Calibrate from real runs — the research hint below already measured low.
+  decisionMakers: 'roughly $0.10–$0.25 from your Anthropic key',
+
   // Sonnet 4.6 single call, note history + brief context
   followUp: 'roughly $0.02–$0.06 from your Anthropic key',
 } as const

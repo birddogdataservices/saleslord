@@ -24,7 +24,7 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { buildSystemPrompt } from '../lib/research-prompt'
-import { webSearchTool, RESEARCH_MAX_USES } from '../lib/web-search'
+import { webSearchTool, ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, RESEARCH_DEADLINE_MS } from '../lib/web-search'
 import { calculateCost } from '../lib/utils'
 import type { ProductPromptContext } from '../lib/types'
 
@@ -123,7 +123,7 @@ async function runOnce(
     max_tokens: cfg.maxTokens,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool(RESEARCH_MAX_USES)],
+    tools: [webSearchTool()],
   }
   if (cfg.thinking) base.thinking = cfg.thinking
   if (cfg.effort) base.output_config = { effort: cfg.effort }
@@ -143,10 +143,12 @@ async function runOnce(
 
     const MAX_CONTINUATIONS = 6
     let continuations = 0
-    while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+    while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS && Date.now() - started < RESEARCH_DEADLINE_MS) {
       continuations++
       messages.push({ role: 'assistant', content: response.content })
-      response = await client.messages.create({ ...base, messages } as never)
+      try {
+        response = await client.messages.create({ ...base, messages } as never)
+      } catch { break }   // mirrors the route: keep what we have
       tally(response.usage)
     }
 
@@ -301,7 +303,7 @@ async function main() {
   const outDir = join(process.cwd(), 'ab-results', `${stamp}_${query.replace(/[^a-zA-Z0-9]+/g, '-')}`)
   mkdirSync(outDir, { recursive: true })
 
-  const client = new Anthropic({ apiKey })
+  const client = new Anthropic({ apiKey, timeout: ANTHROPIC_TIMEOUT_MS, maxRetries: ANTHROPIC_MAX_RETRIES })
   const results: RunResult[] = []
 
   for (let pass = 1; pass <= repeat; pass++) {

@@ -43,6 +43,7 @@
     "title": "Tarefas",
     "running": "{count} em andamento",
     "kindResearch": "Pesquisa",
+    "kindDecisionMakers": "Decisores",
     "kindEmailDraft": "Rascunho de e-mail",
     "kindPitchOpener": "Abertura de pitch",
     "kindCheckUpdates": "Verificar novidades",
@@ -115,7 +116,9 @@
     "refreshDraft": "↺ Atualizar rascunho",
     "refreshing": "Atualizando…",
     "toastRefreshed": "E-mail atualizado · {cost}",
-    "toastRefreshFailed": "Não foi possível atualizar o e-mail."
+    "toastRefreshFailed": "Não foi possível atualizar o e-mail.",
+    "generating": "Redigindo um e-mail…",
+    "noDraftYet": "Ainda não há rascunho. Use Atualizar abaixo para gerar um."
   },
   "PitchOpener": {
     "trigger": "Abertura de pitch →",
@@ -142,5 +145,22 @@
     "generating": "Gerando…",
     "toastGenerated": "Abertura gerada · {cost}",
     "toastGenerateFailed": "Não foi possível gerar a abertura."
+  },
+  "Fit": {
+    "title": "Aderência do produto",
+    "budget": "Sinal de orçamento:",
+    "whatWouldChange": "O que mudaria isso:"
+  },
+  "DecisionMakers": {
+    "title": "Decisores",
+    "inviteBody": "Busque pessoas nomeadas nesta organização, classificadas segundo a senioridade e as funções-alvo da sua equipe. Vale a pena quando a empresa já parece fazer sentido.",
+    "find": "Buscar decisores",
+    "searching": "Buscando decisores…",
+    "searchAgain": "Buscar novamente",
+    "refresh": "Atualizar",
+    "failed": "Não foi possível buscar decisores. Tente novamente.",
+    "foundCount": "{count, plural, one {# decisor encontrado.} other {# decisores encontrados.}}",
+    "noneTitle": "Nenhuma pessoa identificável publicamente foi encontrada.",
+    "noneBody": "A busca foi executada e não conseguiu documentar ninguém nesta organização. É uma resposta real, não um erro — a cobertura pública é escassa em algumas organizações."
   }
 }

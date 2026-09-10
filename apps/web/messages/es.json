@@ -43,6 +43,7 @@
     "title": "Tareas",
     "running": "{count} en curso",
     "kindResearch": "Investigación",
+    "kindDecisionMakers": "Responsables",
     "kindEmailDraft": "Borrador de email",
     "kindPitchOpener": "Apertura de pitch",
     "kindCheckUpdates": "Comprobar novedades",
@@ -115,7 +116,9 @@
     "refreshDraft": "↺ Actualizar borrador",
     "refreshing": "Actualizando…",
     "toastRefreshed": "Email actualizado · {cost}",
-    "toastRefreshFailed": "No se pudo actualizar el email."
+    "toastRefreshFailed": "No se pudo actualizar el email.",
+    "generating": "Redactando un correo…",
+    "noDraftYet": "Aún no hay borrador. Usa Actualizar abajo para generar uno."
   },
   "PitchOpener": {
     "trigger": "Apertura de pitch →",
@@ -142,5 +145,22 @@
     "generating": "Generando…",
     "toastGenerated": "Apertura generada · {cost}",
     "toastGenerateFailed": "No se pudo generar la apertura."
+  },
+  "Fit": {
+    "title": "Encaje del producto",
+    "budget": "Señal de presupuesto:",
+    "whatWouldChange": "Qué cambiaría esto:"
+  },
+  "DecisionMakers": {
+    "title": "Responsables de decisión",
+    "inviteBody": "Busca personas concretas en esta organización, clasificadas según la antigüedad y las funciones objetivo de tu equipo. Merece la pena hacerlo cuando la empresa ya parece encajar.",
+    "find": "Buscar responsables",
+    "searching": "Buscando responsables…",
+    "searchAgain": "Buscar de nuevo",
+    "refresh": "Actualizar",
+    "failed": "No se pudo buscar responsables. Inténtalo de nuevo.",
+    "foundCount": "{count, plural, one {# responsable encontrado.} other {# responsables encontrados.}}",
+    "noneTitle": "No se encontraron personas identificables públicamente.",
+    "noneBody": "La búsqueda se ejecutó y no pudo documentar a nadie en esta organización. Es una respuesta real, no un error: la cobertura pública es escasa en algunas organizaciones."
   }
 }

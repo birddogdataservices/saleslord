@@ -43,6 +43,7 @@
     "title": "Jobs",
     "running": "{count} running",
     "kindResearch": "Research",
+    "kindDecisionMakers": "Decision makers",
     "kindEmailDraft": "Email draft",
     "kindPitchOpener": "Pitch opener",
     "kindCheckUpdates": "Update check",
@@ -115,7 +116,9 @@
     "refreshDraft": "↺ Refresh draft",
     "refreshing": "Refreshing…",
     "toastRefreshed": "Email refreshed · {cost}",
-    "toastRefreshFailed": "Failed to refresh email."
+    "toastRefreshFailed": "Failed to refresh email.",
+    "generating": "Drafting an email…",
+    "noDraftYet": "No draft yet. Use Refresh below to generate one."
   },
   "PitchOpener": {
     "trigger": "Pitch opener →",
@@ -142,5 +145,22 @@
     "generating": "Generating…",
     "toastGenerated": "Opener generated · {cost}",
     "toastGenerateFailed": "Failed to generate opener."
+  },
+  "Fit": {
+    "title": "Product fit",
+    "budget": "Budget signal:",
+    "whatWouldChange": "What would change this:"
+  },
+  "DecisionMakers": {
+    "title": "Decision makers",
+    "inviteBody": "Search for named people at this organization, ranked against your team's target seniority and functions. Worth doing once the company itself looks like a fit.",
+    "find": "Find decision makers",
+    "searching": "Searching for decision makers…",
+    "searchAgain": "Search again",
+    "refresh": "Refresh",
+    "failed": "Could not search for decision makers. Please try again.",
+    "foundCount": "{count, plural, one {# decision maker found.} other {# decision makers found.}}",
+    "noneTitle": "No named individuals found publicly.",
+    "noneBody": "The search ran and could not source anyone at this organization. That is a real answer, not an error — public coverage is thin for some organizations."
   }
 }

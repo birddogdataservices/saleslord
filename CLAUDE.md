@@ -114,7 +114,7 @@ SUPABASE_SERVICE_ROLE_KEY         # Server-side only — admin client
 API_KEY_ENCRYPTION_SECRET         # 64 hex chars — AES-256-GCM for user Anthropic keys
 ALLOWED_DOMAIN                    # e.g. "yourcompany.com" — server auth gate
 NEXT_PUBLIC_ALLOWED_DOMAIN        # Same value — passed to Google OAuth hd= param
-DAILY_CALL_LIMIT                  # Default 25 — max Anthropic calls per user per 24h
+DAILY_CALL_LIMIT                  # Default 50 — runaway guard on metered Anthropic calls per user per 24h; rep_profiles.daily_call_limit overrides per rep
 RESEND_API_KEY                    # Server-side only
 CRON_SECRET                       # Authenticates Vercel cron requests
 NEXT_PUBLIC_APP_URL               # e.g. https://saleslord-theta.vercel.app
@@ -154,7 +154,7 @@ at the repo root — Next.js looks for it relative to the app directory.
 
 Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v1.6.0** (targeting tiers visible; prompt caching; research effort + sourcing rules; staged research design)
+Current version: **v1.7.0** (staged research — company + fit verdict, then rep-triggered decision makers)
 
 Known gap: there is no v1.0.0 tag — the TerritoryLord session (documented as
 v1.0.0 in HANDOFF.md) was never tagged. Tags jump v0.9.0 → v1.1.0.
@@ -221,17 +221,33 @@ const adminClient = createAdminClient()
 Never import `admin.ts` from client components, server components, or
 `core/`/`signals/` code.
 
-## Rate limiting (ProspectLord Anthropic calls)
+## Runaway guard (ProspectLord Anthropic calls)
 
-Every ProspectLord API route checks `api_usage` before calling Anthropic:
+**This is a guard, not a budget.** BYOK means every rep pays their own card, so
+the limit is not there to control spend — it exists so a retry loop or a
+misconfigured client cannot make unbounded calls before anyone notices. Default
+50/day, sized never to bind in real use.
+
+Never hand-roll the check. `lib/api-usage.ts` owns it:
+
 ```ts
-const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-const { count } = await adminClient
-  .from('api_usage').select('*', { count: 'exact', head: true })
-  .eq('user_id', userId).gte('created_at', since)
-if ((count ?? 0) >= Number(process.env.DAILY_CALL_LIMIT ?? '25'))
-  return Response.json({ error: 'Daily limit reached' }, { status: 429 })
+import { checkDailyLimit } from '@/lib/api-usage'
+
+// Pass the rep's override when the profile is already loaded — omitting it
+// falls back to the env default and silently ignores a configured override.
+const limit = await checkDailyLimit(adminClient, user.id, profile?.daily_call_limit)
+if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 ```
+
+Only **metered** endpoints count — `METERED_ENDPOINTS` in the same module. The
+search-heavy Sonnet routes (research, decision-makers, check-updates,
+case-study-match) are metered. The cheap Haiku routes (email, pitch opener,
+resolve) are deliberately not: reps are meant to iterate on copy freely, and
+they still write to the cost ledger. Keeping those two jobs separate is what
+makes raising the ceiling safe.
+
+Per-rep override: `rep_profiles.daily_call_limit` (null = env default). Manual
+SQL edit for now; an admin UI is in `docs/prospectlord/BACKLOG.md`.
 
 ## Cost tracking
 
