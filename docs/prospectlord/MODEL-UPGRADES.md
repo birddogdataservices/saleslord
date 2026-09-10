@@ -94,6 +94,19 @@ Run this whenever a new model ships, or a current one is deprecated.
    sized to leave room for thinking.
 3. **Never change the prompt and the model in the same run.** Prompt is
    versioned; model is the variable under test.
+
+   **This extends past the model.** On 2026-09-09 Phase 0 changed the search
+   tool version, the search budget (`max_uses`), and the search instructions in
+   one commit, and deferred measuring them. A research call then ran 15.2
+   minutes and returned a 500 — in production Vercel would have killed it at
+   300s with nothing to show. Three plausible causes, no way to tell them apart,
+   and the whole lot had to be reverted to get back to working.
+
+   Treat **search tool version, `max_uses`, and search-effort prompt rules** as
+   one interacting group with the model: change one, measure, then the next.
+   `max_uses` in particular is not a harmless ceiling — the model spends the
+   budget it is given, and `web_search_20260209` runs code execution internally
+   for its filtering, so each search costs more than a search used to.
 4. **Ship on the scorecard, not on cost.** Corroboration and citation quality are
    gates. Cost and latency are tiebreakers between candidates that both pass.
 5. **Update `PRICING` in `lib/utils.ts` before switching.** An unlisted model ID

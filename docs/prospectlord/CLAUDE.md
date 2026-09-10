@@ -100,7 +100,7 @@ See `supabase/schema.sql` for the full migration. Tables:
 - `allowed_emails` — access control allowlist (no RLS select policy — service role only)
 - `prospects` — one row per tracked company; upserted on `user_id + query`
 - `prospect_briefs` — one active brief per prospect; includes `stats jsonb` for stat cards
-- `decision_makers` — 3–5 per prospect, role-colored avatars; `targeting_tier` (prime_target | intel_only | low_signal) + `tier_reasoning` set by research prompt; UI sorts by tier rank then sort_order — no badges, no sections
+- `decision_makers` — 3–5 per prospect, role-colored avatars; `targeting_tier` (prime_target | intel_only | low_signal) + `tier_reasoning` set by research prompt; UI sorts by tier rank then sort_order, and renders a tier badge + tier_reasoning on each card (screen and PDF). Written by the stage 2 /api/decision-makers route, not by research
 - `prospect_notes` — log entries; filter by state + industry
 - `follow_ups` — gated by reason (>= 10 words)
 - `api_usage` — every Anthropic call logged here with token counts + cost_usd
@@ -184,8 +184,27 @@ Singleton targeting config. GET: any authenticated user (used by setup page). PU
 ### POST /api/resolve ✅ built
 Org disambiguation — called before research. Haiku (not Sonnet). Returns up to 4 `OrgCandidate` objects with confidence scores. Applies territory boost (+0.15) to candidates whose `hq_region` is in the rep's `territories` rows; sorts descending by boosted confidence. Not rate-limited; not logged to `api_usage`. On any error, `AddProspectInput` falls through to `/api/research` directly.
 
-### POST /api/research ✅ built
-Full prospect research. Anthropic web search tool with agentic loop. Writes to prospects, prospect_briefs, decision_makers (including targeting_tier + tier_reasoning). Fetches team_config and injects seniority_bands + target_functions into system prompt. Logs to api_usage. Always receives a `disambiguated_query` from the resolve flow (e.g. `"Delta Air Lines (NYSE: DAL, Atlanta GA)"`) rather than raw user input.
+### POST /api/research ✅ built — STAGE 1 of staged research
+Company assessment plus the fit verdict the rep gates on. Anthropic web search
+tool with agentic loop, bounded by a per-call timeout and a wall-clock deadline
+(`lib/web-search.ts`) so it always returns a brief rather than timing out — a
+failed continuation is caught and the brief is composed from findings so far.
+Writes prospects and prospect_briefs (including `fit`). Logs to api_usage.
+Always receives a `disambiguated_query` from the resolve flow.
+
+**Does NOT write decision makers or an email.** Those are later rep-triggered
+stages — see the product principle in the root `CLAUDE.md` and
+`docs/prospectlord/STAGED-RESEARCH.md`. Prompt lives in `lib/research-prompt.ts`
+so the A/B harness runs the exact prompt production uses.
+
+### POST /api/decision-makers ✅ built — STAGE 2 of staged research
+Rep-triggered only; nothing chains into it. Grounded in the stage 1 brief rather
+than re-researching the company, so its whole search budget goes on finding
+people. Reads team_config for seniority bands and target functions, assigns
+`targeting_tier` + `tier_reasoning`. Writes decision_makers and stamps
+`prospects.dm_researched_at` — **even when zero people are found**, so the UI can
+tell "looked and found nobody" from "never looked". An empty result is a correct
+outcome, not an error. Prompt in `lib/decision-makers-prompt.ts`.
 
 ### POST /api/follow-up — to build
 Follow-up touch generation. Requires `reason` >= 10 words. Reads full note history. Logs to api_usage.
@@ -208,17 +227,23 @@ No Anthropic call. Fetches case study records + signed Storage URLs for selected
 ### GET /api/case-studies/slide-url/[id] ✅ built
 Generates a short-lived signed URL for a single slide image in Supabase Storage. Used by CaseStudySlideModal to render previews without exposing the storage bucket publicly.
 
-## Rate limiting
+## Runaway guard
 
-Every API route checks `api_usage` before calling Anthropic:
+Not a budget — BYOK means each rep pays their own card. It exists so a retry
+loop cannot make unbounded calls. Default 50/day, overridable per rep via
+`rep_profiles.daily_call_limit`. Never hand-roll it:
+
 ```ts
-const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-const { count } = await adminClient
-  .from('api_usage').select('*', { count: 'exact', head: true })
-  .eq('user_id', userId).gte('created_at', since)
-if ((count ?? 0) >= Number(process.env.DAILY_CALL_LIMIT ?? '25'))
-  return Response.json({ error: 'Daily limit reached' }, { status: 429 })
+import { checkDailyLimit } from '@/lib/api-usage'
+// Pass the override when the profile is loaded, or it is silently ignored.
+const limit = await checkDailyLimit(adminClient, user.id, profile?.daily_call_limit)
+if (!limit.ok) return Response.json({ error: limit.error }, { status: limit.status })
 ```
+
+Only `METERED_ENDPOINTS` count (research, decision-makers, check-updates,
+case-study-match). Email, pitch opener and resolve are cheap Haiku calls the rep
+is meant to iterate on freely — they still write to the cost ledger but do not
+consume the guard. See the root `CLAUDE.md` for the full rationale.
 
 ## Cost tracking
 
