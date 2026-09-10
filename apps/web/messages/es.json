@@ -163,5 +163,9 @@
     "foundCount": "{count, plural, one {# responsable encontrado.} other {# responsables encontrados.}}",
     "noneTitle": "No se encontraron personas identificables públicamente.",
     "noneBody": "La búsqueda se ejecutó y no pudo documentar a nadie en esta organización. Es una respuesta real, no un error: la cobertura pública es escasa en algunas organizaciones."
+  },
+  "Home": {
+    "emptyTitle": "Aún no hay prospectos",
+    "emptyBody": "Añade una empresa en la barra lateral para investigarla. Primero recibirás un informe con la valoración de encaje; los responsables y el mensaje vienen después, solo si los pides."
   }
 }

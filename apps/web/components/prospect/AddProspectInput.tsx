@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import OrgDisambiguationDialog from './OrgDisambiguationDialog'
 import type { OrgCandidate } from '@/lib/types'
 import { COST_HINTS } from '@/lib/costs'
+import { LONG_ACTION_TOAST_MS } from '@/lib/utils'
 
 export default function AddProspectInput() {
   const router = useRouter()
@@ -14,7 +15,7 @@ export default function AddProspectInput() {
   const [dialog, setDialog] = useState<{ candidates: OrgCandidate[]; originalQuery: string } | null>(null)
 
   async function runResearch(researchQuery: string) {
-    const toastId = toast.loading(`Researching ${researchQuery}…`, { duration: 60000 })
+    const toastId = toast.loading(`Researching ${researchQuery}…`, { duration: LONG_ACTION_TOAST_MS })
     try {
       const res = await fetch('/api/research', {
         method:  'POST',

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { COST_HINTS } from '@/lib/costs'
+import { LONG_ACTION_TOAST_MS } from '@/lib/utils'
 
 type Props = {
   prospectId: string
@@ -24,7 +25,7 @@ export default function FindDecisionMakersButton({ prospectId, variant }: Props)
     setLoading(true)
     // Longer than the default toast: this runs a search loop and the rep should
     // not be left wondering whether it is still going.
-    const toastId = toast.loading(t('searching'), { duration: 120000 })
+    const toastId = toast.loading(t('searching'), { duration: LONG_ACTION_TOAST_MS })
 
     try {
       const res = await fetch('/api/decision-makers', {
