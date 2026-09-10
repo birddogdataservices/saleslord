@@ -14,7 +14,7 @@ import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildDecisionMakersPrompt, type RawDecisionMaker } from '@/lib/decision-makers-prompt'
 import {
-  webSearchTool, DECISION_MAKERS_DEADLINE_MS,
+  webSearchTool, DECISION_MAKERS_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
 } from '@/lib/web-search'
 import { withJob } from '@/lib/jobs'
@@ -158,6 +158,7 @@ async function run(request: Request): Promise<Response> {
       ],
       maxTokens: 4096,
       cache: true,   // same system prompt as the search loop — reads its cache
+      timeoutMs: EMIT_TIMEOUT_MS,
     })
     raw = (structured.value as { decision_makers?: RawDecisionMaker[] }).decision_makers ?? []
     totalInputTokens  += structured.inputTokens

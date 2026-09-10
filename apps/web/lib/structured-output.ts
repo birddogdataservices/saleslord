@@ -46,6 +46,10 @@ export async function generateStructured(args: {
   messages: Anthropic.MessageParam[]
   maxTokens?: number
   cache?: boolean
+  // Per-request override. This call does no searching, so it should be held to
+  // a much shorter leash than the search calls that precede it — otherwise a
+  // slow emit eats the headroom the route deadline reserved for it.
+  timeoutMs?: number
 }): Promise<StructuredResult> {
   const res = await args.client.messages.create({
     model:      args.model,
@@ -55,7 +59,7 @@ export async function generateStructured(args: {
     tools:      [EMIT_TOOL] as any,
     tool_choice: { type: 'tool', name: EMIT_TOOL.name } as any,
     messages:   args.messages,
-  })
+  }, args.timeoutMs ? { timeout: args.timeoutMs } : undefined)
 
   const toolUse = res.content.find(b => b.type === 'tool_use')
   if (!toolUse || toolUse.type !== 'tool_use') {

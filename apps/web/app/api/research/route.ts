@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildSystemPrompt } from '@/lib/research-prompt'
 import {
-  webSearchTool, RESEARCH_DEADLINE_MS,
+  webSearchTool, RESEARCH_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
 } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
@@ -117,14 +117,28 @@ async function run(request: Request): Promise<Response> {
   // resends the whole growing conversation at full price, and there can be seven
   // of them. The same system prompt also feeds the phase-2 emit call, so that
   // reads from this cache too.
-  let response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
-    system: systemPrompt,
-    cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool()] as any,
-    messages,
-  })
+  // The first call is the one that cannot fail safely — with no findings there
+  // is nothing to compose a brief from. Continuations below are wrapped and can
+  // be skipped; this one gets a clear message instead of a raw 500, because a
+  // rep who waited two minutes deserves to know what happened and that their
+  // existing brief is untouched.
+  let response: Anthropic.Message
+  try {
+    response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 4096,
+      system: systemPrompt,
+      cache_control: { type: 'ephemeral' },
+      tools: [webSearchTool()] as any,
+      messages,
+    })
+  } catch (err) {
+    console.error('[research] Initial search call failed:', err instanceof Error ? err.message : err)
+    return Response.json(
+      { error: 'Research timed out before it could gather anything. Your existing brief is unchanged — please try again.' },
+      { status: 504 },
+    )
+  }
   let totalInputTokens  = response.usage.input_tokens
   let totalOutputTokens = response.usage.output_tokens
   let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
@@ -202,6 +216,7 @@ async function run(request: Request): Promise<Response> {
       ],
       maxTokens: 8192,   // brief JSON was landing within ~10% of the old 4096 cap
       cache: true,   // same system prompt as the search loop — reads its cache
+      timeoutMs: EMIT_TIMEOUT_MS,
     })
     parsed = structured.value
     totalInputTokens  += structured.inputTokens
