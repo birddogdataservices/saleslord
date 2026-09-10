@@ -35,6 +35,10 @@ const PRICING: Record<string, { input: number; output: number }> = {
     input:  2.00 / 1_000_000,
     output: 10.00 / 1_000_000,
   },
+  'claude-opus-5': {
+    input:  5.00 / 1_000_000,
+    output: 25.00 / 1_000_000,
+  },
   'claude-haiku-4-5': {
     input:  1.00 / 1_000_000,
     output: 5.00 / 1_000_000,

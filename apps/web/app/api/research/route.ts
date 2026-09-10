@@ -3,7 +3,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildSystemPrompt } from '@/lib/research-prompt'
-import { webSearchTool, RESEARCH_MAX_USES } from '@/lib/web-search'
+import {
+  webSearchTool, RESEARCH_DEADLINE_MS,
+  ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
+} from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -84,7 +87,12 @@ async function run(request: Request): Promise<Response> {
 
   // 5. Build and run the AI research call with agentic tool-use loop
   const today  = new Date()
-  const client = new Anthropic({ apiKey: userApiKey })
+  const startedAt = Date.now()
+  const client = new Anthropic({
+    apiKey: userApiKey,
+    timeout: ANTHROPIC_TIMEOUT_MS,
+    maxRetries: ANTHROPIC_MAX_RETRIES,
+  })
 
   // Rep-facing output (the whole brief is read by the rep) → always profile.locale,
   // never the per-prospect override. JSON rule keeps keys English so parsing holds.
@@ -114,7 +122,7 @@ async function run(request: Request): Promise<Response> {
     max_tokens: 4096,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool(RESEARCH_MAX_USES)] as any,
+    tools: [webSearchTool()] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
@@ -127,32 +135,61 @@ async function run(request: Request): Promise<Response> {
   // its iteration limit the response comes back with stop_reason 'pause_turn';
   // continue by appending the assistant content and re-sending (no tool_results,
   // no extra user message). Cap continuations to stay under Vercel's 300s timeout.
+  // Bounded by BOTH a continuation count and a wall-clock deadline. Counting
+  // continuations does not bound time — a single call can run for minutes — and
+  // the whole route has to finish inside vercel.json's maxDuration or the rep
+  // gets nothing at all. Stopping early with a thinner brief beats timing out.
   const MAX_CONTINUATIONS = 6
   let continuations = 0
-  while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+  while (
+    response.stop_reason === 'pause_turn' &&
+    continuations < MAX_CONTINUATIONS &&
+    Date.now() - startedAt < RESEARCH_DEADLINE_MS
+  ) {
     continuations++
     messages.push({ role: 'assistant', content: response.content })
 
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: systemPrompt,
-      cache_control: { type: 'ephemeral' },
-      tools: [webSearchTool(RESEARCH_MAX_USES)] as any,
-      messages,
-    })
+    // Continuations are best-effort enrichment, not all-or-nothing. If one
+    // times out or errors, keep the findings gathered so far and go compose the
+    // brief — a rep who waited deserves a thinner brief, not an error. Without
+    // this, a single slow call throws away the whole run.
+    try {
+      response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 4096,
+        system: systemPrompt,
+        cache_control: { type: 'ephemeral' },
+        tools: [webSearchTool()] as any,
+        messages,
+      })
+    } catch (err) {
+      console.warn(`[research] continuation ${continuations} failed, composing from findings so far:`,
+        err instanceof Error ? err.message : err)
+      break
+    }
     totalInputTokens  += response.usage.input_tokens
     totalOutputTokens += response.usage.output_tokens
     cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
     cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
   }
 
+  // Findings accumulate across every assistant turn, not just the last one —
+  // when a continuation is cut short the earlier turns are all we have.
+  const gathered = messages
+    .filter(m => m.role === 'assistant')
+    .flatMap(m => Array.isArray(m.content) ? m.content : [])
+    .map(b => (typeof b === 'object' && b !== null && 'type' in b && b.type === 'text' ? (b as { text: string }).text : ''))
+    .filter(Boolean)
+
   // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop above can't ALSO be forced to emit a tool (forcing it would
   // stop the search), so this is a dedicated second call: hand the model its own
   // gathered findings and have it return the brief through the emit_result tool,
   // whose input the API serializes as valid JSON — no text parsing, any language.
-  const findings = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n').trim()
+  const findings = [
+    ...gathered,
+    ...response.content.map(b => (b.type === 'text' ? b.text : '')),
+  ].filter(Boolean).join('\n').trim()
 
   let parsed: any
   try {

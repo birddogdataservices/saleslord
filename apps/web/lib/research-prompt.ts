@@ -47,8 +47,7 @@ ${productsBlock}
 
 Research rules (how hard to look, and what counts as knowing something):
 - This brief is spoken aloud in discovery calls. A confidently stated wrong fact costs the rep credibility; a missing one costs nothing. When those trade off, omit.
-- Search until every section you fill is supported by something you actually retrieved. Do not stop at the first plausible answer — the company's own newsroom, recent trade press, and public filings usually each add something the others miss.
-- For anything a rep would say out loud — a named person, a dollar figure, a date, a named system — prefer two independent sources. One source is acceptable; zero is not.
+- For anything a rep would say out loud — a named person, a dollar figure, a date, a named system — you need ONE source you actually retrieved. One good source is enough. Zero is not, and "it is probably true" is zero.
 - NEVER present an inference as a retrieved fact. If you are reasoning from industry norms rather than a source, either omit the item or make the basis explicit in its text.
 - Prefer null, an empty array, or "Unknown" over a plausible guess. Every nullable field in the schema below is there so you can decline. Declining is a correct answer and is never penalised.
 - Recency matters: an item older than ~18 months is rarely a useful outreach trigger. Prefer current material, and never present a stale item as current.

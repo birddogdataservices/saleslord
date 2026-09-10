@@ -13,7 +13,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildDecisionMakersPrompt, type RawDecisionMaker } from '@/lib/decision-makers-prompt'
-import { webSearchTool, DECISION_MAKERS_MAX_USES } from '@/lib/web-search'
+import {
+  webSearchTool, DECISION_MAKERS_DEADLINE_MS,
+  ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
+} from '@/lib/web-search'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import { generateStructured } from '@/lib/structured-output'
@@ -87,7 +90,12 @@ async function run(request: Request): Promise<Response> {
     techSignals:     (brief.tech_signals as string[]) ?? [],
   }) + `\n\n${languageDirective(profile?.locale)} ${JSON_LANGUAGE_RULE}`
 
-  const client = new Anthropic({ apiKey: key.value })
+  const startedAt = Date.now()
+  const client = new Anthropic({
+    apiKey: key.value,
+    timeout: ANTHROPIC_TIMEOUT_MS,
+    maxRetries: ANTHROPIC_MAX_RETRIES,
+  })
   const userTurn = `Find the people involved in a software purchase decision at ${prospect.name}.`
 
   type AntMessage = Anthropic.MessageParam
@@ -102,7 +110,7 @@ async function run(request: Request): Promise<Response> {
     max_tokens: 4096,
     system: systemPrompt,
     cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool(DECISION_MAKERS_MAX_USES)] as any,
+    tools: [webSearchTool()] as any,
     messages,
   })
   let totalInputTokens  = response.usage.input_tokens
@@ -114,7 +122,11 @@ async function run(request: Request): Promise<Response> {
   // well inside its 120s maxDuration.
   const MAX_CONTINUATIONS = 4
   let continuations = 0
-  while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+  while (
+    response.stop_reason === 'pause_turn' &&
+    continuations < MAX_CONTINUATIONS &&
+    Date.now() - startedAt < DECISION_MAKERS_DEADLINE_MS
+  ) {
     continuations++
     messages.push({ role: 'assistant', content: response.content })
     response = await client.messages.create({
@@ -122,7 +134,7 @@ async function run(request: Request): Promise<Response> {
       max_tokens: 4096,
       system: systemPrompt,
       cache_control: { type: 'ephemeral' },
-      tools: [webSearchTool(DECISION_MAKERS_MAX_USES)] as any,
+      tools: [webSearchTool()] as any,
       messages,
     })
     totalInputTokens  += response.usage.input_tokens
