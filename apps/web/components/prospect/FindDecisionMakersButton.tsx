@@ -67,7 +67,12 @@ export default function FindDecisionMakersButton({ prospectId, variant }: Props)
       <button
         onClick={handleClick}
         disabled={loading}
-        className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40 cursor-pointer"
+        // The invite variant is the primary action on an empty section, so it is
+        // full-size. Refresh and retry sit in a section header next to 10px meta
+        // text, so they are scaled down to avoid pushing the header taller.
+        className={`rounded-[6px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40 cursor-pointer ${
+          prominent ? 'text-[11px] px-3 py-[5px]' : 'text-[10px] px-2 py-[3px]'
+        }`}
         style={prominent
           ? { border: 'none', background: 'var(--sl-text)', color: '#F0EDE6' }
           : { border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text3)' }

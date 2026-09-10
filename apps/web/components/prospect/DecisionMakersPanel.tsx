@@ -51,13 +51,13 @@ export default async function DecisionMakersPanel({ prospectId, dms, dmResearche
     )
   }
 
+  // Refresh lives in the section header, not below the card — it acts on this
+  // section, and a footer button reads as unattached to anything.
   return (
-    <div className="flex flex-col gap-[6px]">
-      <DecisionMakers decisionMakers={dms} />
-      <div className="flex justify-end">
-        <FindDecisionMakersButton prospectId={prospectId} variant="refresh" />
-      </div>
-    </div>
+    <DecisionMakers
+      decisionMakers={dms}
+      action={<FindDecisionMakersButton prospectId={prospectId} variant="refresh" />}
+    />
   )
 }
 

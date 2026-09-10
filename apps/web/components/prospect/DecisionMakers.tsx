@@ -6,11 +6,17 @@ import { toast } from 'sonner'
 import { ROLE_COLORS, ROLE_LABELS, TIER_COLORS, TIER_LABELS, tierOf, sortByTier } from '@/lib/utils'
 import type { DecisionMaker, DmRole } from '@/lib/types'
 
-type Props = { decisionMakers: DecisionMaker[] }
+type Props = {
+  decisionMakers: DecisionMaker[]
+  // Rendered in the section header. A slot rather than a hardcoded button so
+  // this component stays unaware of what refreshing decision makers involves —
+  // the panel that knows about stages owns that.
+  action?: React.ReactNode
+}
 
 const ALL_ROLES: DmRole[] = ['champion', 'economic_buyer', 'gatekeeper', 'end_user', 'influencer', 'custom']
 
-export default function DecisionMakers({ decisionMakers: initial }: Props) {
+export default function DecisionMakers({ decisionMakers: initial, action }: Props) {
   const [dms, setDms] = useState(() => sortByTier(initial))
 
   async function updateRole(id: string, role: DmRole, label: string) {
@@ -33,6 +39,7 @@ export default function DecisionMakers({ decisionMakers: initial }: Props) {
     <SectionCard
       title="Decision makers"
       meta={`${primeCount} of ${dms.length} prime · click role to reassign`}
+      action={action}
     >
       {dms.map(dm => (
         <DMCard key={dm.id} dm={dm} onRoleChange={updateRole} />
@@ -172,12 +179,20 @@ function DMCard({ dm, onRoleChange }: {
   )
 }
 
-function SectionCard({ title, meta, children }: { title: string; meta?: string; children: React.ReactNode }) {
+function SectionCard({ title, meta, action, children }: {
+  title: string
+  meta?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <div className="rounded-[10px] overflow-hidden" style={{ background: 'var(--sl-surface)', border: '1px solid var(--sl-border)' }}>
-      <div className="flex items-center justify-between px-[14px] py-[10px]" style={{ borderBottom: '1px solid var(--sl-border-s)' }}>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sl-text2)' }}>{title}</span>
-        {meta && <span className="text-[10px]" style={{ color: 'var(--sl-text3)' }}>{meta}</span>}
+      <div className="flex items-center gap-3 px-[14px] py-[8px]" style={{ borderBottom: '1px solid var(--sl-border-s)' }}>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em] flex-shrink-0" style={{ color: 'var(--sl-text2)' }}>{title}</span>
+        {meta && (
+          <span className="text-[10px] ml-auto text-right" style={{ color: 'var(--sl-text3)' }}>{meta}</span>
+        )}
+        {action && <div className={`flex-shrink-0${meta ? '' : ' ml-auto'}`}>{action}</div>}
       </div>
       {children}
     </div>
