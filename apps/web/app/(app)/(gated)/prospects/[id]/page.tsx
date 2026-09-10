@@ -64,9 +64,21 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           <div className="text-[16px] font-semibold" style={{ color: 'var(--sl-text)' }}>
             {prospect.name}
           </div>
-          {brief?.timing && (
+          {brief && (
             <div className="flex gap-2 text-[11px] mt-[2px]" style={{ color: 'var(--sl-text2)' }}>
-              <span>{t('fyEnds', { date: brief.timing.fy_end })}</span>
+              {/* Staleness, stated rather than hidden in a tooltip. Read from
+                  the brief's own created_at, which is unambiguous — prospects
+                  .last_refreshed_at was written by check-updates too, so it can
+                  claim a brief is fresher than it is. */}
+              <span title={new Date(brief.created_at).toLocaleString()}>
+                {t('researched', {
+                  date: new Date(brief.created_at).toLocaleDateString(undefined, {
+                    month: 'short', day: 'numeric', year: 'numeric',
+                  }),
+                })}
+              </span>
+              <span style={{ color: 'var(--sl-border)' }}>·</span>
+              {brief.timing && <span>{t('fyEnds', { date: brief.timing.fy_end })}</span>}
               {brief.stats?.stage?.value && (
                 <>
                   <span style={{ color: 'var(--sl-border)' }}>·</span>
@@ -101,7 +113,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
             </a>
           )}
           {brief && (
-            <CheckUpdatesButton prospectId={id} lastRefreshedAt={prospect.last_refreshed_at} />
+            <CheckUpdatesButton prospectId={id} lastCheckedAt={prospect.last_checked_at} />
           )}
           {brief && (
             <PitchOpenerButton
@@ -153,7 +165,7 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           )}
 
           {/* Update blurbs — freshest intel on top, above original brief */}
-          {updates.length > 0 && <UpdateBlurbs updates={updates} />}
+          {updates.length > 0 && <UpdateBlurbs updates={updates} briefCreatedAt={brief?.created_at ?? null} />}
 
           {brief && (
             <div className="grid gap-[14px]" style={{ gridTemplateColumns: '1fr 340px' }}>

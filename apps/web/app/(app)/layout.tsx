@@ -22,7 +22,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       last_refreshed_at,
       archived_at,
       prospect_briefs (
-        timing
+        timing,
+        created_at
       )
     `)
     .eq('user_id', user.id)
@@ -51,12 +52,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Shape into ProspectSidebarItem[], split active vs archived
   const toSidebarItem = (p: any): ProspectSidebarItem => {
-    const briefs = p.prospect_briefs as Array<{ timing: any }> | null
+    const briefs = p.prospect_briefs as Array<{ timing: any; created_at: string }> | null
     const timing = briefs?.[0]?.timing ?? null
     return {
       id:                p.id,
       name:              p.name,
-      last_refreshed_at: p.last_refreshed_at,
+      // The brief's own timestamp, not prospects.last_refreshed_at — the latter
+      // was written by check-updates too and can claim a brief is fresher than
+      // it is, which is the wrong direction for a staleness cue.
+      last_refreshed_at: briefs?.[0]?.created_at ?? null,
       archived_at:       p.archived_at ?? null,
       window_status:     timing?.fy_end ? computeWindowStatus(timing.fy_end) : null,
       fy_end:            timing?.fy_end

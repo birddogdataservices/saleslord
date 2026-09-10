@@ -63,6 +63,9 @@ export type Prospect = {
   // prospect. Set even when the stage ran and found nobody, so the UI can tell
   // "looked and found nobody" apart from "never looked".
   dm_researched_at: string | null
+  // News scans only. last_refreshed_at above is brief rebuilds only — they were
+  // one column doing two jobs, which made "last checked" wrong half the time.
+  last_checked_at: string | null
 }
 
 export type NewsItem = {

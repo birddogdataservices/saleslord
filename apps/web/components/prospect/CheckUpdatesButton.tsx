@@ -6,15 +6,15 @@ import { toast } from 'sonner'
 
 type Props = {
   prospectId: string
-  lastRefreshedAt: string | null
+  lastCheckedAt: string | null
 }
 
-export default function CheckUpdatesButton({ prospectId, lastRefreshedAt }: Props) {
+export default function CheckUpdatesButton({ prospectId, lastCheckedAt }: Props) {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  const lastCheckedLabel = lastRefreshedAt
-    ? new Date(lastRefreshedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const lastCheckedLabel = lastCheckedAt
+    ? new Date(lastCheckedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : null
 
   async function handleClick() {
@@ -38,7 +38,7 @@ export default function CheckUpdatesButton({ prospectId, lastRefreshedAt }: Prop
         router.refresh()
       } else {
         toast.success('No significant updates since last check')
-        router.refresh() // still refresh so last_refreshed_at updates
+        router.refresh() // still refresh so last_checked_at updates
       }
     } catch {
       toast.error('Something went wrong. Please try again.')
@@ -59,7 +59,7 @@ export default function CheckUpdatesButton({ prospectId, lastRefreshedAt }: Prop
         opacity: loading ? 0.7 : 1,
         cursor: loading ? 'not-allowed' : 'pointer',
       }}
-      title={lastCheckedLabel ? `Last checked ${lastCheckedLabel}` : undefined}
+      title={lastCheckedLabel ? `Last checked for news ${lastCheckedLabel}` : 'Never checked for news since this brief was researched'}
     >
       {loading && (
         <svg

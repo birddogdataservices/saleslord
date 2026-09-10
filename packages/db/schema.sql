@@ -89,6 +89,7 @@ create table prospects (
   -- "never looked". Lives here rather than on prospect_briefs so decision makers
   -- survive a stage 1 refresh (which replaces the brief row).
   dm_researched_at timestamptz,
+  last_checked_at  timestamptz,   -- news scans only (/api/check-updates). last_refreshed_at is brief rebuilds only (/api/research). Two different facts.
   unique (user_id, query)           -- required for ON CONFLICT upsert in research route
 );
 alter table prospects enable row level security;
