@@ -163,5 +163,9 @@
     "foundCount": "{count, plural, one {# décideur trouvé.} other {# décideurs trouvés.}}",
     "noneTitle": "Aucune personne identifiable publiquement.",
     "noneBody": "La recherche a été effectuée sans pouvoir sourcer qui que ce soit dans cette organisation. C'est une vraie réponse, pas une erreur — la couverture publique est mince pour certaines organisations."
+  },
+  "Home": {
+    "emptyTitle": "Aucun prospect pour le moment",
+    "emptyBody": "Ajoutez une entreprise dans la barre latérale pour la rechercher. Vous obtiendrez d'abord un brief avec l'évaluation d'adéquation — les décideurs et l'approche viennent ensuite, uniquement si vous le demandez."
   }
 }

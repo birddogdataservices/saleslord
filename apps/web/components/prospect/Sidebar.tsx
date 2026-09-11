@@ -68,6 +68,10 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
 
   const openCount = prospects.filter(p => p.window_status === 'open').length
 
+  // A search forces archived matches open — see the comment on the toggle below.
+  const searching   = search.trim().length > 0
+  const archivedOpen = showArchived || (searching && filteredArchived.length > 0)
+
   return (
     <aside
       className="flex flex-col flex-shrink-0 overflow-y-auto relative"
@@ -119,7 +123,12 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
         )
       })}
 
-      {/* Archived toggle */}
+      {/* Archived toggle.
+          While a search is active the matches are forced visible: the filter
+          already runs over archived prospects, so leaving them collapsed meant
+          searching an archived company's name returned an apparently empty
+          sidebar — the result was there, just hidden behind a toggle the rep
+          had no reason to suspect. */}
       {archivedProspects.length > 0 && (
         <div className="px-[14px] pt-[10px]">
           <button
@@ -129,9 +138,9 @@ export default function Sidebar({ prospects, archivedProspects, monthlyCostUsd, 
             onMouseEnter={e => ((e.target as HTMLElement).style.color = '#888')}
             onMouseLeave={e => ((e.target as HTMLElement).style.color = '#484844')}
           >
-            {showArchived ? '▾' : '▸'} {t('archivedCount', { count: archivedProspects.length })}
+            {archivedOpen ? '▾' : '▸'} {t('archivedCount', { count: searching ? filteredArchived.length : archivedProspects.length })}
           </button>
-          {showArchived && filteredArchived.map(p => (
+          {archivedOpen && filteredArchived.map(p => (
             <ProspectLink key={p.id} p={p} isActive={p.id === activeId} muted />
           ))}
         </div>

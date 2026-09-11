@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEscapeKey } from '@/lib/use-escape-key'
 import type { OrgCandidate } from '@/lib/types'
 
 type Props = {
@@ -12,11 +12,7 @@ type Props = {
 }
 
 export default function OrgDisambiguationDialog({ query, candidates, onSelect, onClose, costHint }: Props) {
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+  useEscapeKey(onClose)
 
   const hasResults = candidates.length > 0
 

@@ -7,6 +7,21 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // ─────────────────────────────────────────
+// Long-running action toasts
+// ─────────────────────────────────────────
+// Loading toasts for AI actions must outlive the work they describe. They were
+// set to 60s and 120s while research routinely takes over two minutes, so the
+// toast vanished mid-run and the rep was left staring at an unchanged page with
+// no indication anything was happening — indistinguishable from a silent
+// failure.
+//
+// 300s matches the Vercel function ceiling: past that the request has failed
+// anyway, so the toast can never outlive a request that is still alive. Every
+// caller dismisses explicitly on success, error and network failure, so this is
+// a backstop rather than the normal path.
+export const LONG_ACTION_TOAST_MS = 300_000
+
+// ─────────────────────────────────────────
 // Email validation
 // ─────────────────────────────────────────
 // Deliberately permissive — the goal is catching typos and garbage before we

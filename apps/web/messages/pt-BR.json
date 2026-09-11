@@ -163,5 +163,9 @@
     "foundCount": "{count, plural, one {# decisor encontrado.} other {# decisores encontrados.}}",
     "noneTitle": "Nenhuma pessoa identificável publicamente foi encontrada.",
     "noneBody": "A busca foi executada e não conseguiu documentar ninguém nesta organização. É uma resposta real, não um erro — a cobertura pública é escassa em algumas organizações."
+  },
+  "Home": {
+    "emptyTitle": "Ainda não há prospects",
+    "emptyBody": "Adicione uma empresa na barra lateral para pesquisá-la. Você recebe primeiro um briefing com a leitura de aderência; decisores e abordagem vêm depois, só se você pedir."
   }
 }

@@ -163,5 +163,9 @@
     "foundCount": "{count, plural, one {# Entscheider gefunden.} other {# Entscheider gefunden.}}",
     "noneTitle": "Keine öffentlich benannten Personen gefunden.",
     "noneBody": "Die Suche wurde durchgeführt und konnte niemanden in dieser Organisation belegen. Das ist eine echte Antwort, kein Fehler — die öffentliche Berichterstattung ist bei manchen Organisationen dünn."
+  },
+  "Home": {
+    "emptyTitle": "Noch keine Prospects",
+    "emptyBody": "Fügen Sie in der Seitenleiste ein Unternehmen hinzu, um es zu recherchieren. Sie erhalten zuerst ein Briefing mit der Passungsbewertung — Entscheider und Ansprache folgen später, nur auf Ihre Anfrage."
   }
 }

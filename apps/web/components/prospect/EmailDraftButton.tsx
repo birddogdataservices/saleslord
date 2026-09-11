@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
+import { useEscapeKey } from '@/lib/use-escape-key'
 import { useTranslations, useFormatter } from 'next-intl'
 import { detectSlop } from '@/lib/slop'
 import { LANGUAGES, PROFILE_DEFAULT, isSupportedLocale } from '@/lib/i18n/languages'
@@ -31,6 +32,9 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
   const tl = useTranslations('Language')
   const format = useFormatter()
   const [open,              setOpen]              = useState(false)
+
+  // Escape closes, matching the other modals.
+  useEscapeKey(() => setOpen(false), open)
   const [email,             setEmail]             = useState<EmailDraft | null>(initialEmail)
   const [refreshing,        setRefreshing]        = useState(false)
   const [copied,            setCopied]            = useState(false)

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { toast } from 'sonner'
+import { useEscapeKey } from '@/lib/use-escape-key'
 import { useTranslations, useFormatter } from 'next-intl'
 import { detectSlop } from '@/lib/slop'
 import { LANGUAGES, PROFILE_DEFAULT, isSupportedLocale } from '@/lib/i18n/languages'
@@ -40,6 +41,9 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
   const tl = useTranslations('Language')
   const format = useFormatter()
   const [open,              setOpen]              = useState(false)
+
+  // Escape closes, matching the other modals.
+  useEscapeKey(() => setOpen(false), open)
   // Product drives signal selection — default to the first product, never empty.
   const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id ?? '')
   // Pre-select the prospect's sticky override if set, else the "Profile default" sentinel.

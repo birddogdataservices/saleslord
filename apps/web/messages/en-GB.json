@@ -163,5 +163,9 @@
     "foundCount": "{count, plural, one {# decision maker found.} other {# decision makers found.}}",
     "noneTitle": "No named individuals found publicly.",
     "noneBody": "The search ran and could not source anyone at this organisation. That is a real answer, not an error — public coverage is thin for some organisations."
+  },
+  "Home": {
+    "emptyTitle": "No prospects yet",
+    "emptyBody": "Add a company in the sidebar to research it. You will get a brief with the fit read first — decision makers and outreach come later, only if you ask."
   }
 }

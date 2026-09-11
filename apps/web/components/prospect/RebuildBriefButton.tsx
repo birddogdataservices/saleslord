@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { LONG_ACTION_TOAST_MS } from '@/lib/utils'
 
 type Props = {
   query: string
@@ -20,7 +21,7 @@ export default function RebuildBriefButton({ query }: Props) {
     if (state !== 'confirm') return
 
     setState('loading')
-    const toastId = toast.loading('Refreshing company research…', { duration: 120000 })
+    const toastId = toast.loading('Refreshing company research…', { duration: LONG_ACTION_TOAST_MS })
 
     try {
       const res = await fetch('/api/research', {
