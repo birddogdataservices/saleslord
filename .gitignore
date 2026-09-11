@@ -46,3 +46,6 @@ ab-results/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# turbo task logs/cache
+.turbo/
