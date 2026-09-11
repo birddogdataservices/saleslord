@@ -1,6 +1,61 @@
 # ProspectLord — Handoff
 
-## Current version: v1.7.3 — staged research, honest costs, visible staleness
+## Current version: v1.8.0 — SDK 0.125, measured per stage
+
+---
+
+## Session 14 (2026-09-11) — SDK 0.81 → 0.125, with a real safety net
+
+The top-priority item from Session 13, done in the order that session asked for:
+build the measurement first, re-baseline, then upgrade.
+
+### What shipped
+
+**Step 1 — the harness measures the two stages separately** (`apps/web/scripts/ab-research.ts`)
+
+It had still been running the pre-v1.7.0 combined flow, so there was no
+post-split baseline and `MODEL-UPGRADES.md` described a protocol that could not
+be run. It now times and prices stage 1 (`/api/research`) and stage 2
+(`/api/decision-makers`) independently.
+
+- Stage 2 grounds on stage 1's in-memory brief when both run, or on the stored
+  brief with `--stages 2`. The grounding mapping mirrors the row
+  `research/route.ts` writes, so both paths ground identically.
+- Calls the real `generateStructured`, the real prompts, the real budgets. The
+  old harness omitted the `languageDirective` + `JSON_LANGUAGE_RULE` suffix both
+  routes append — it was measuring a prompt production never sends.
+- Mirrors each route's findings handling rather than correcting it: stage 1
+  accumulates across every assistant turn, stage 2 reads the final turn only.
+- Default `--configs` is now `a` alone. It was `a,b,c,d`, so a bare invocation
+  spent on three Sonnet 5 runs nobody asked for.
+- Still writes nothing to the database; still confirms before spending.
+
+**Step 2/3 — re-baselined, upgraded, re-ran.** Numbers and caveats are in
+[`MODEL-UPGRADES.md`](MODEL-UPGRADES.md) under the 2026-09-11 baseline record.
+Cost −3.2%, wall time +1.9%, both inside run-to-run spread. `packages/signals`
+pinned `^0.81.0` too and was bumped with it — bumping only `apps/web` would have
+installed two copies of the SDK.
+
+### What this measurement corrected
+
+**A complete brief costs ~$0.75, not ~$0.34.** The v1.7.3 figures (133.8s /
+$0.3407 and 125.2s / $0.2853) match stage 1 alone almost exactly. Stage 2 costs
+roughly the same as stage 1 — it reads a large cached prefix and searches just
+as hard. Still inside the $0.50–$1.00 budget, but at the top of it, not the
+bottom. This is exactly what a combined number was hiding.
+
+### The gap this session did NOT close — read before touching the search loop
+
+**The `pause_turn` continuation loop is still unverified.** Every stage on all
+four runs made exactly **one** search call; the server-side loop finished inside
+a single API call and never returned `pause_turn`. Searching was clearly
+happening (96k–186k cache-read tokens per stage), just internally.
+
+So: the SDK upgrade is confirmed safe for `cache_control` placement and forced
+`tool_choice`, and **is not confirmed safe for the continuation loop**. The
+2026-09-08 record observed six continuations on this same model and prospect, so
+this is a behaviour change worth understanding on its own. Find a prospect that
+triggers `pause_turn` before trusting that code or refactoring it.
 
 ---
 
@@ -79,6 +134,10 @@ Two end-to-end harness runs after the split: **133.8s / $0.3407** and
 minutes**, so there is real headroom. Confirmed working on net-new accounts for
 both create-brief and find-decision-makers.
 
+> **Corrected by Session 14:** these are **stage 1 only**. The harness was still
+> running the pre-split combined flow, and stage 2 costs about as much again — a
+> complete brief is ~$0.75. The headroom is real but roughly half what this says.
+
 ### Hard-won lessons — read these before changing the research loop
 
 1. **Change one variable at a time.** Phase 0 changed the search tool
@@ -106,24 +165,20 @@ both create-brief and find-decision-makers.
 
 ## Top priority for the next session
 
-### 1. `@anthropic-ai/sdk` 0.81 → 0.125, with the harness as the safety net
+### 1. Find out why `pause_turn` never fires — DONE? no, opened by Session 14
 
-44 minor versions behind on a pre-1.0 line, on the dependency the product
-*is*. **Do not ship this on a typecheck alone** — this session twice shipped
-changes that built fine and broke at runtime. The sequence:
+Not a regression, but an unexplained behaviour change, and it leaves the
+riskiest code in the app unexercised. On 2026-09-08 Sonnet 4.6 took six
+continuations on "State of Massachusetts"; on 2026-09-11 the same model and
+prospect took **one search call on every one of four runs**. Either the
+server-side search loop now completes internally, or something in the prompt
+changed what it asks for.
 
-1. Teach `apps/web/scripts/ab-research.ts` to time and price **stage 1 and
-   stage 2 separately**. It still measures the old combined flow, so there is
-   no post-split baseline, and `MODEL-UPGRADES.md` currently describes a
-   protocol that cannot actually be run.
-2. Re-baseline on the current SDK. Two runs, same prospect.
-3. Upgrade. Re-run. Compare cost, wall time, and brief quality.
+Until this is understood, `MAX_CONTINUATIONS`, the `*_DEADLINE_MS` guards and
+the continuation error handling in both search routes are untested code. Find a
+prospect that triggers `pause_turn` and add it to the harness panel.
 
-Watch specifically: the `pause_turn` continuation loop, `cache_control`
-placement, and forced tool use (`tool_choice`) in `lib/structured-output.ts` —
-all three are the kind of API surface that moves across 44 versions.
-
-### 2. Then, and only then, the model evaluation
+### 2. Then the model evaluation
 
 Sonnet 5 and Opus 5 against the re-baselined numbers, and a separate test of
 `web_search_20260209` **alone** — it was never evaluated on its own merits,
@@ -142,7 +197,7 @@ and it is only used by TerritoryLord, which is being restarted anyway.
 
 ---
 
-## Known cleanups (none urgent, all verified present at v1.7.3)
+## Known cleanups (none urgent, all verified present at v1.8.0)
 
 - **4 copies of `SCard`** — `CaseStudySection.tsx`, `ProspectLog.tsx`,
   `RightColumn.tsx`, `prospects/[id]/page.tsx`. Three share a signature; the
@@ -170,6 +225,29 @@ and it is only used by TerritoryLord, which is being restarted anyway.
   split, with no decision makers. A script could backfill stage 2 across them.
 - **ZoomInfo** — wire real contact data into stage 2 someday.
 - **Admin UI for `rep_profiles.daily_call_limit`** — currently a manual SQL edit.
+
+## Backlog items raised in Session 14
+
+- **`decision-makers` and `check-updates` drop earlier findings.** Both compose
+  the emit call from `response.content` — the **final** assistant turn only
+  (`decision-makers/route.ts:155`, `check-updates/route.ts:255`). `research`
+  accumulates across every turn (`research/route.ts:186`). When a continuation is
+  cut short by the deadline, those two throw away everything gathered before it.
+  Pre-existing at v1.7.3; left alone during the SDK upgrade to keep one variable
+  moving at a time. Fix it together with the `pause_turn` investigation above —
+  the two are the same code path, and neither can be verified without a prospect
+  that actually continues.
+- **`packages/signals/src/enrichment.ts:175` loops on the wrong stop reason.**
+  It declares `web_search_20250305` — a server-side tool — then loops on
+  `stop_reason === 'tool_use'`, which a server-side tool never returns. The whole
+  continuation block is dead code, and the `tool_result` blocks it builds read
+  `(b as any).output`, a field that does not exist on a `tool_use` block. Effect
+  today is mild (enrichment gets one search pass instead of up to three, which
+  may be fine for "confirm an HQ") but it is not doing what it says. CELord's
+  path, so it needs its own change.
+- **`toBriefRow` duplication.** The harness derives stage 2's grounding from a
+  parsed stage 1 brief by repeating the mapping in `research/route.ts` step 8.
+  That mapping is the stage 1 → stage 2 contract and should live in one place.
 
 ---
 

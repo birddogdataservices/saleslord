@@ -604,8 +604,13 @@ async function main() {
   }
 
   // ── The plan, and the money ────────────────────────────────────────────────
-  // Ranges are the measured spread of the v1.7.x runs, rounded outward.
-  const STAGE_COST = { 1: [0.10, 0.35], 2: [0.05, 0.20] } as const
+  // Measured on Sonnet 4.6 over the four "State of Massachusetts" runs of
+  // 2026-09-11 (stage 1 $0.3220–$0.3552, stage 2 $0.3907–$0.4389), rounded
+  // outward. Stage 2 costs about the SAME as stage 1 — it reads a large cached
+  // prefix and searches just as hard. An earlier guess here had stage 2 at
+  // $0.05–$0.20, which understated a run by roughly half; this figure is what
+  // the rep sees before approving a spend, so it gets measured, not estimated.
+  const STAGE_COST = { 1: [0.25, 0.45], 2: [0.30, 0.55] } as const
   const perRun = stages.reduce((acc, s) => [acc[0] + STAGE_COST[s as 1 | 2][0], acc[1] + STAGE_COST[s as 1 | 2][1]], [0, 0])
   const totalRuns = configs.length * repeat
 

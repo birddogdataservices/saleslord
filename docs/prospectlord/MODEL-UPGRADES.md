@@ -58,8 +58,23 @@ point; pre-Phase-0 numbers are not comparable.
 
 ## Phase 1 — turn the harness into a real eval
 
-`apps/web/scripts/ab-research.ts` currently runs one company and prints cost and
-latency. Quality still needs a human reading JSON. Two gaps:
+**Done (2026-09-11): the harness measures the two stages separately.** It had
+still been running the pre-v1.7.0 combined flow, so this protocol described
+something that could not actually be run. `apps/web/scripts/ab-research.ts` now
+times and prices `POST /api/research` (stage 1) and `POST /api/decision-makers`
+(stage 2) independently, calls the real `generateStructured` and the real
+prompts, and prints per-stage shape counts alongside cost and latency.
+
+```bash
+pnpm ab:research "State of Massachusetts" --repeat 2   # both stages
+pnpm ab:research "Broadridge Financial" --stages 2     # stage 2 on the stored brief
+```
+
+Splitting it immediately corrected a number this document had wrong: **stage 2
+costs about the same as stage 1**, so a complete brief is ~$0.75, not the ~$0.34
+the v1.7.x notes implied. Those figures were stage 1 alone.
+
+Quality still needs a human reading JSON. Two gaps remain:
 
 **A fixed prospect panel.** One prospect and two passes cannot settle much. Use
 5–8 prospects spanning the segments actually sold to, including:
@@ -133,7 +148,50 @@ gap is test design rather than model capability.
 
 ---
 
-## Baseline record — 2026-09-08
+## Baseline record — 2026-09-11 (current reference point)
+
+**This is the number to compare against.** Post-split, per stage, on the prompt
+and search tool that ship at v1.8.0.
+
+Prospect: "State of Massachusetts". `claude-sonnet-4-6`, `web_search_20250305`,
+model defaults (no `thinking`, no `effort`). Two runs per side.
+
+| SDK | stage 1 research | stage 2 decision-makers | total |
+|---|---|---|---|
+| 0.81 | 115.9s / $0.3552 | 112.5s / $0.4063 | 228.5s / $0.7615 |
+| 0.81 | 119.8s / $0.3223 | 127.7s / $0.4389 | 247.5s / $0.7612 |
+| 0.125 | 123.6s / $0.3487 | 129.0s / $0.4121 | 252.6s / $0.7608 |
+| 0.125 | 117.7s / $0.3220 | 114.7s / $0.3907 | 232.5s / $0.7127 |
+
+The SDK upgrade moved cost −3.2% and wall time +1.9% — both inside run-to-run
+spread. **Take the 0.125 rows as the reference**: ~$0.72–$0.76 and ~230–250s
+for a complete brief, against a budget of $0.50–$1.00 and 5–10 minutes.
+
+Quality was stable across all four runs: `fit: moderate` every time,
+`revenue: "N/A — state government"` every time (the public-sector rule holds),
+and the same four people — Yajurvedi (CDO), Cole (CTO), Snyder (Secretary/CIO),
+Bradshaw (Deputy Secretary) — surfaced in every run. That last point is the
+corroboration signal Phase 1 wants, arrived at by hand.
+
+Two caveats, both load-bearing:
+
+- **The `pause_turn` path was never exercised.** Every stage on all four runs
+  made exactly **one** search call — the server-side loop completed inside a
+  single API call and never returned `pause_turn`. Search volume was high
+  (96k–186k cache-read tokens per stage), it just all happened internally. So
+  `MAX_CONTINUATIONS` and the `*_DEADLINE_MS` guards are currently protecting a
+  path production does not take on this prospect, and no comparison run has
+  tested the continuation loop since v1.7.0. Note that the 2026-09-08 record
+  below observed *six* continuations on the same model — so this is a change in
+  behaviour, not a property of the loop. Worth finding a prospect that triggers
+  it before trusting that code.
+- **`statsFilled` in the harness output counts non-null, not correct.**
+  `"N/A — state government"` scores the same as a dollar figure. It is a change
+  detector, not a quality score. Read `stats` in the JSON.
+
+---
+
+## Baseline record — 2026-09-08 (superseded; pre-split, pre-Phase-0 prompt)
 
 Prospect: "State of Massachusetts". Two passes per config. Pre-Phase-0 prompt,
 `web_search_20250305`, `max_tokens: 4096`.
