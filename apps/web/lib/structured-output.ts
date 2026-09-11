@@ -50,16 +50,27 @@ export async function generateStructured(args: {
   // a much shorter leash than the search calls that precede it — otherwise a
   // slow emit eats the headroom the route deadline reserved for it.
   timeoutMs?: number
+  // Model posture, passed straight through. No route sets these — production runs
+  // Sonnet 4.6 at its defaults, so both are undefined and the request body is
+  // byte-identical to before. The A/B harness does set them, and a harness that
+  // configures the search call but silently leaves the emit call at defaults is
+  // measuring a configuration nobody would ship. That exact mistake invalidated
+  // the 2026-09-08 model comparison — see MODEL-UPGRADES.md, "how to invalidate
+  // your own A/B".
+  thinking?: { type: 'disabled' } | { type: 'adaptive' }
+  effort?: 'low' | 'medium' | 'high' | 'xhigh'
 }): Promise<StructuredResult> {
   const res = await args.client.messages.create({
     model:      args.model,
     max_tokens: args.maxTokens ?? 4096,
     system:     args.system,
     ...(args.cache ? { cache_control: { type: 'ephemeral' as const } } : {}),
+    ...(args.thinking ? { thinking: args.thinking } : {}),
+    ...(args.effort ? { output_config: { effort: args.effort } } : {}),
     tools:      [EMIT_TOOL] as any,
     tool_choice: { type: 'tool', name: EMIT_TOOL.name } as any,
     messages:   args.messages,
-  }, args.timeoutMs ? { timeout: args.timeoutMs } : undefined)
+  } as any, args.timeoutMs ? { timeout: args.timeoutMs } : undefined)
 
   const toolUse = res.content.find(b => b.type === 'tool_use')
   if (!toolUse || toolUse.type !== 'tool_use') {
