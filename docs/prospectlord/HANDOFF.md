@@ -1,6 +1,43 @@
 # ProspectLord — Handoff
 
-## Current version: v1.8.0 — SDK 0.125, measured per stage
+## Current version: v1.8.1 — SDK 0.125, measured per stage
+
+---
+
+## Session 14b (2026-09-11) — the v1.8.0 deploy failed; a v1.7.3 break surfaced
+
+`Can't resolve 'shadcn/tailwind.css'`. **Not caused by the SDK upgrade** — it was
+dormant since v1.7.3 and the v1.8.0 deploy is simply what exposed it.
+
+`apps/web/app/globals.css` line 3 imported `shadcn/tailwind.css`. v1.7.3 removed
+`shadcn` from dependencies as "zero imports" — correct about the CLI, wrong about
+the CSS, because a `@import` in a stylesheet is not something an import scan
+finds. It kept building anyway: Vercel restores a build cache between deploys, and
+that cache still held the pruned package. The v1.8.0 install finally pruned it
+(`Packages: +4 -232` in the log) and the build broke.
+
+Fixed by vendoring the 95 lines into `globals.css` — the canonical shadcn +
+Tailwind v4 setup, and it keeps the CLI out of `dependencies` as root `CLAUDE.md`
+requires. `data-open`, `data-closed` and `data-disabled` are in live use in
+`components/`, so deleting the import instead would have broken styling silently.
+
+### Hard-won lesson: a local build is NOT a clean build
+
+**`pnpm install` does not prune packages dropped from the lockfile.** `shadcn@4.6.0`
+sat in `node_modules` for the entire v1.7.3 → v1.8.0 window, so every local build
+resolved the import and passed. Vercel installs clean, so it did not.
+
+This is a second way to ship a green build that breaks in production, alongside
+the typecheck problem already recorded below. Before trusting a build that touches
+dependencies:
+
+```bash
+rm -rf node_modules apps/web/node_modules apps/web/.next && pnpm install
+pnpm --filter @saleslord/web build
+```
+
+The v1.8.0 build was reported green off a warm Turbopack cache with a stale
+`node_modules`. It proved nothing.
 
 ---
 
