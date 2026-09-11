@@ -12,7 +12,10 @@ A pnpm monorepo with one deployed Next.js app hosting all products:
   organizations running end-of-life Pentaho Community Edition via GitHub,
   Shodan, job postings, and other public signals. See [`docs/celord/CLAUDE.md`](docs/celord/CLAUDE.md).
 - **TerritoryLord** — territory whitespace tool. Enumerates organizations in a
-  rep's territory that plausibly fit their ICP. Not yet built.
+  rep's territory that plausibly fit their ICP. **v0 is built and gated**
+  (`app/territorylord/*`, `app/api/territorylord/*`) — a first run returned 465
+  candidates — but Jon is not happy with it and intends to restart the approach.
+  Treat the existing code as a prototype to be replaced, not a base to extend.
   See [`docs/territorylord/CLAUDE.md`](docs/territorylord/CLAUDE.md).
 
 ## Product principle — nothing is generated blindly
@@ -52,7 +55,7 @@ What this means when building:
   be renamed ProspectLord when user-facing rename work happens.
 - **ProspectLord** — rename target for the current prospecting app.
 - **CELord** — CE signal detection app. Shares packages and Supabase project.
-- **TerritoryLord** — territory whitespace app. Not yet built.
+- **TerritoryLord** — territory whitespace app. v0 built, slated for a restart.
 
 ## Repo structure
 
@@ -83,7 +86,7 @@ saleslord/                  (monorepo root)
         │   ├── auth/callback/
         │   ├── (app)/              (ProspectLord routes)
         │   ├── celord/             (CELord routes)
-        │   └── (territorylord)/    (TerritoryLord routes — future)
+        │   └── territorylord/      (TerritoryLord routes — v0 prototype)
         ├── components/             (app-specific UI components)
         └── lib/                    (ProspectLord utilities)
 ```
@@ -100,8 +103,14 @@ saleslord/                  (monorepo root)
 - **Web search**: Anthropic web search tool (`web_search_20250305`)
 - **PDF generation**: `@react-pdf/renderer` — server-side only, components in `lib/pdf/*.tsx`
 - **PDF-to-image**: `pdf-to-img` (wraps `pdfjs-dist` — no system binary deps, Vercel-safe)
-- **Email**: Resend
-- **Payments**: Stripe (stubbed — wire when ready)
+- **Email**: **Supabase Auth only** — invites and login links go out through
+  `inviteUserByEmail` / `signInWithOtp` (see `app/api/admin/allowed-emails/*`).
+  There is no transactional email provider installed. Resend was planned and
+  never wired; do not assume it exists.
+- **Payments**: none installed. Stripe is planned, not wired.
+- **UI components**: shadcn/ui, added via `pnpm dlx shadcn@latest add <name>`.
+  The CLI is deliberately not a dependency — it is a scaffolding tool, and
+  installing it shipped a build-time-only CLI into the production install.
 - **Deployment**: Vercel (single deployment — both apps in one Next.js instance at Stage 1)
 - **Cron**: Vercel cron (`vercel.json`)
 
@@ -115,13 +124,14 @@ API_KEY_ENCRYPTION_SECRET         # 64 hex chars — AES-256-GCM for user Anthro
 ALLOWED_DOMAIN                    # e.g. "yourcompany.com" — server auth gate
 NEXT_PUBLIC_ALLOWED_DOMAIN        # Same value — passed to Google OAuth hd= param
 DAILY_CALL_LIMIT                  # Default 50 — runaway guard on metered Anthropic calls per user per 24h; rep_profiles.daily_call_limit overrides per rep
-RESEND_API_KEY                    # Server-side only
 CRON_SECRET                       # Authenticates Vercel cron requests
 NEXT_PUBLIC_APP_URL               # e.g. https://saleslord-theta.vercel.app
 ANTHROPIC_API_KEY                 # Server-side only — CELord cron/enrichment (not BYOK)
 # CELord collectors (add when flipping stubs to real):
 # GITHUB_TOKEN / SHODAN_API_KEY / SERPAPI_KEY (or ADZUNA_APP_ID + ADZUNA_APP_KEY)
-# Stripe (wire when ready):
+# Transactional email (only if a provider is ever wired — none is today):
+# RESEND_API_KEY
+# Stripe (wire when ready — the package is not installed):
 # STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET / NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 ```
 
@@ -154,7 +164,7 @@ at the repo root — Next.js looks for it relative to the app directory.
 
 Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v1.7.2** (UX friction pass — toast lifetimes, Escape-to-close, real empty home state, archived search)
+Current version: **v1.7.3** (docs corrected to match the repo; dead deps removed)
 
 Known gap: there is no v1.0.0 tag — the TerritoryLord session (documented as
 v1.0.0 in HANDOFF.md) was never tagged. Tags jump v0.9.0 → v1.1.0.
@@ -199,8 +209,8 @@ Increment guide:
 ## Platform-wide rules (what Claude Code must never do)
 
 - Expose secret env vars client-side (`SUPABASE_SERVICE_ROLE_KEY`,
-  `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `API_KEY_ENCRYPTION_SECRET`,
-  collector API keys)
+  `API_KEY_ENCRYPTION_SECRET`, `CRON_SECRET`, collector API keys — and any
+  provider key added later)
 - Call Anthropic client-side
 - Skip RLS on client Supabase queries
 - Import `apps/web/lib/supabase/admin.ts` from anywhere outside `apps/web/app/api/*`

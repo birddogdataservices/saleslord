@@ -1,6 +1,175 @@
 # ProspectLord — Handoff
 
-## Current version: v1.4.3 — i18n / multi-language
+## Current version: v1.7.3 — staged research, honest costs, visible staleness
+
+---
+
+## Session 13 (2026-09-10) — review pass: correctness, staging, cost control
+
+A full review pass. The through-line: **the app should not lie to the rep, and
+nothing expensive should happen without them asking.**
+
+### What shipped
+
+**v1.5.0 — usage accounting**
+- `lib/api-usage.ts` is now the single owner of the runaway guard and the cost
+  ledger. They used to be the same counter, which meant cheap Haiku calls ate
+  the same budget as a $0.40 research run. `METERED_ENDPOINTS` lists what
+  counts; email/pitch-opener/resolve write to the ledger but do not meter.
+  **Never hand-roll the check** — see root `CLAUDE.md`.
+- `calculateCost` was silently returning 0 for dated model ids
+  (`claude-haiku-4-5-20251001`). `normalizeModelId` strips the `-YYYYMMDD`
+  suffix. Cache read/write multipliers (0.10x / 1.25x) are applied.
+- Teammates get a login link emailed when they are allowlisted — via Supabase
+  Auth (`inviteUserByEmail`, falling back to `signInWithOtp` for users who
+  already exist). No Resend, no transactional provider.
+
+**v1.6.0 — targeting tiers + prompt caching**
+- Decision makers surface a targeting tier; `sortByTier` and the tier palette
+  live in `lib/utils.ts`.
+- The web-search prompt prefix is cached (`cache_control: ephemeral`).
+
+**v1.7.0 — staged research** (the important one)
+- `POST /api/research` is now **stage 1 only**: company, news, fit. It no
+  longer writes decision makers or drafts an email.
+- `POST /api/decision-makers` is **stage 2**, triggered by the rep from the
+  brief. It uses `loadProspectContext`, which gives the "no brief yet" 404 for
+  free, and stamps `dm_researched_at` even when it finds nobody.
+- The UI never shows an empty section. An unrun stage renders an invitation
+  (button + what it does + roughly what it costs). "No named individuals found
+  publicly" is rendered as a correct answer, not a failure.
+- This is now a **product principle** in root `CLAUDE.md` — read it before
+  adding any generative feature.
+
+**v1.7.1 — staleness**
+- Brief age shows in the sidebar next to every prospect (`3d`, `6w`, `4mo`;
+  amber past 30 days) and on the brief itself.
+- Research and update-check timestamps were split, because a fresh brief was
+  making month-old update blurbs look current. The migration reads
+  `prospect_briefs.created_at` rather than defaulting to `now()` — defaulting
+  would have made every existing brief look freshly researched, which is the
+  dangerous direction to err in.
+
+**v1.7.2 — UX friction**
+- Toast lifetimes use `LONG_ACTION_TOAST_MS` (300s, the Vercel ceiling), so a
+  toast cannot expire while its request is still running.
+- `lib/use-escape-key.ts`; Escape closes every modal.
+- Home renders an empty state instead of redirecting to `/setup`. The old
+  redirect dropped a fully configured rep who had archived everything into a
+  settings form with nothing to do.
+- Sidebar search forces archived matches open and counts matches.
+
+**v1.7.3 — docs and dead deps**
+- Root `CLAUDE.md` and `.env.local.example` corrected: no Resend, no Stripe,
+  TerritoryLord is built-but-being-restarted.
+- Removed `stripe` (zero imports) and `shadcn` (a scaffolding CLI that was
+  sitting in production `dependencies`). Add components with
+  `pnpm dlx shadcn@latest add <name>`.
+
+### Migrations — all three are already run on production
+
+- `2026-09-08_allowed_emails_format.sql`
+- `2026-09-09_staged_research.sql`
+- `2026-09-10_split_staleness_timestamps.sql`
+
+### Measured behaviour
+
+Two end-to-end harness runs after the split: **133.8s / $0.3407** and
+**125.2s / $0.2853**. Jon's stated budget is **$0.50–1.00 per brief and 5–10
+minutes**, so there is real headroom. Confirmed working on net-new accounts for
+both create-brief and find-decision-makers.
+
+### Hard-won lessons — read these before changing the research loop
+
+1. **Change one variable at a time.** Phase 0 changed the search tool
+   (`web_search_20250305` to `web_search_20260209`), added `max_uses: 15`, and
+   rewrote the prompt to demand exhaustive search — all at once. Result: a
+   15.2-minute call that returned a 500. The revert kept only the accuracy
+   rules, which cost no search volume. `MODEL-UPGRADES.md` records this.
+2. **Two guards, not one.** A per-call timeout bounds one call
+   (`ANTHROPIC_TIMEOUT_MS`); a wall-clock deadline bounds the route
+   (`*_DEADLINE_MS`). Both live in `lib/web-search.ts`. A production refresh
+   failed at exactly 3:03 — 90s timeout + 90s retry + setup — which is why
+   retries are now **0** and the first search call is wrapped to return 504.
+3. **One source, judged by authority — not two sources.** The failure mode is
+   zero sources, not one. Requiring two does not stop fabrication; it discards
+   singly-sourced truths.
+4. **More fields filled is not better.** A `$61B revenue` figure on a state
+   government is the appropriations budget wearing the wrong label. The prompt
+   prefers `null`, and public-sector stats say `N/A — state government`.
+5. **The A/B harness only measures what it runs.** A Sonnet 5 comparison was
+   invalidated because both Sonnet 5 configs ran with thinking disabled and
+   effort `medium` against defaults of enabled / `high`. Check the config
+   before trusting the numbers.
+
+---
+
+## Top priority for the next session
+
+### 1. `@anthropic-ai/sdk` 0.81 → 0.125, with the harness as the safety net
+
+44 minor versions behind on a pre-1.0 line, on the dependency the product
+*is*. **Do not ship this on a typecheck alone** — this session twice shipped
+changes that built fine and broke at runtime. The sequence:
+
+1. Teach `apps/web/scripts/ab-research.ts` to time and price **stage 1 and
+   stage 2 separately**. It still measures the old combined flow, so there is
+   no post-split baseline, and `MODEL-UPGRADES.md` currently describes a
+   protocol that cannot actually be run.
+2. Re-baseline on the current SDK. Two runs, same prospect.
+3. Upgrade. Re-run. Compare cost, wall time, and brief quality.
+
+Watch specifically: the `pause_turn` continuation loop, `cache_control`
+placement, and forced tool use (`tool_choice`) in `lib/structured-output.ts` —
+all three are the kind of API surface that moves across 44 versions.
+
+### 2. Then, and only then, the model evaluation
+
+Sonnet 5 and Opus 5 against the re-baselined numbers, and a separate test of
+`web_search_20260209` **alone** — it was never evaluated on its own merits,
+only as one of three simultaneous changes. Protocol:
+[`MODEL-UPGRADES.md`](MODEL-UPGRADES.md).
+
+### 3. Other dependency upgrades
+
+`next` 16.2.2→16.3.4, `react`/`react-dom` 19.2.4→19.3.0, `lucide-react`
+1.14→1.44, `@supabase/ssr` 0.10→0.12, `next-intl` 4.13→4.14. Majors that need
+their own look: `pdf-to-img` 5→7, `eslint` 9→10.
+
+Also: `react-simple-maps@3` declares peers of React 16/17/18 and is installed
+against React 19. It works today, but it is unmaintained against this React —
+and it is only used by TerritoryLord, which is being restarted anyway.
+
+---
+
+## Known cleanups (none urgent, all verified present at v1.7.3)
+
+- **4 copies of `SCard`** — `CaseStudySection.tsx`, `ProspectLog.tsx`,
+  `RightColumn.tsx`, `prospects/[id]/page.tsx`. Three share a signature; the
+  `ProspectLog` one adds `meta`. Extract one component with an optional `meta`.
+- **`check-updates` hand-rolls `loadProspectContext`** — it fetches prospect,
+  briefs and rep profile itself (route lines ~107-110). Switching it would
+  delete code and pick up the ownership 404 for free.
+- **Structured-output schema is declared but not enforced** — `emit_result`
+  guarantees valid JSON, not correctly *shaped* JSON.
+- **Serialized auth round-trips** — `proxy.ts` authenticates, then
+  `(gated)/layout.tsx` calls `getUser()` and counts products, then the page
+  calls `getUser()` again. Parallelize or pass the user down.
+- **`JobsSection` polls forever** — every 20s even when it renders nothing
+  (it returns `null` at zero jobs, but the interval keeps running).
+- **i18n gap: 16 of 23 `components/prospect/*` are hardcoded English** —
+  `AddProspectInput`, `ArchiveButton`, `BriefPdf`, `CaseStudySection`,
+  `CaseStudySlideModal`, `CheckUpdatesButton`, `DecisionMakers`, `NewsCard`,
+  `OrgDisambiguationDialog`, `ProspectLog`, `RebuildBriefButton`,
+  `ReresearchButton`, `RightColumn`, `StatCards`, `TimingBar`, `UpdateBlurbs`.
+  The infrastructure is there (next-intl, 6 locales) — these were never converted.
+
+## Backlog items raised this session
+
+- **Bulk decision-maker refresh** — the database holds briefs from before the
+  split, with no decision makers. A script could backfill stage 2 across them.
+- **ZoomInfo** — wire real contact data into stage 2 someday.
+- **Admin UI for `rep_profiles.daily_call_limit`** — currently a manual SQL edit.
 
 ---
 

@@ -1,10 +1,23 @@
 # SalesLord Platform — Handoff
 
-## Current state: v1.0.0 — TerritoryLord live, first run complete
+## Current state: v1.7.3 — ProspectLord staged research
 
-Stage 2 monorepo done. TerritoryLord v0 shipped and producing results — first
-run returned 465 candidate organizations (Public Administration + Educational
-Services ICP). Next focus: candidate filtering and size/revenue enrichment.
+**Active work is ProspectLord.** Read
+[`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md) first — it is
+the live document. This file is platform-level state plus older session history.
+
+The 2026-09-10 review pass reworked ProspectLord's core loop: research is now
+split into two rep-triggered stages (company + fit, then decision makers), the
+runaway guard is separated from the cost ledger, staleness is visible, and
+there is a written protocol for adopting newer Claude models
+([`docs/prospectlord/MODEL-UPGRADES.md`](docs/prospectlord/MODEL-UPGRADES.md)).
+
+**TerritoryLord:** v0 is built and gated, and a first run returned 465
+candidate organizations — but Jon is not happy with the approach and intends to
+restart it. Treat `app/territorylord/*` as a prototype to be replaced. The
+"candidate filtering" plan further down this file predates that decision.
+
+**CELord:** v0 feature-complete, untouched by recent sessions.
 
 ```
 saleslord/
@@ -21,7 +34,15 @@ saleslord/
 - Output: `apps/web/.next`
 - `next` listed in root `package.json` devDependencies — required for Vercel framework detection
 
-## ProspectLord: job history sidebar (this session)
+---
+
+# Older session history
+
+Everything below is a record of earlier sessions, kept for context. Where it
+disagrees with `docs/prospectlord/HANDOFF.md` or the current code, it is out of
+date — trust the code.
+
+## ProspectLord: job history sidebar
 
 The sidebar now shows AI jobs (research, email drafts, update checks, case
 study matches) — running jobs with live elapsed time, finished jobs with
@@ -63,7 +84,10 @@ granted before first sign-in. **Default: new users see ProspectLord only.**
 - **Migration to run in prod Supabase:** `packages/db/migrations/2026-06-10_module_access.sql`
   (includes a commented seed block to preserve existing users' all-tab access).
 
-## TerritoryLord: next session — candidate filtering
+## TerritoryLord: candidate filtering (SUPERSEDED — restart planned)
+
+> Jon has since decided to restart TerritoryLord rather than extend it. This
+> plan is kept only as a record of where v0 stopped.
 
 See [`docs/territorylord/HANDOFF.md`](docs/territorylord/HANDOFF.md) for full detail.
 
@@ -73,11 +97,11 @@ filter to it, and improve the results table (sort, filter by status, bulk action
 
 **Data source:** Wikidata SPARQL (free, no key)
 
-## ProspectLord status: v0.9.0 — Per-user products + mandatory product gate
+## ProspectLord status at v0.9.0 (historical)
 
-See [`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md).
+See [`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md) for current status.
 
-**Shipped this session (v0.9.0):**
+**Shipped in v0.9.0:**
 - Products moved from shared admin-managed table to per-user ownership —
   migration run in prod Supabase; `/admin/products` removed; product CRUD
   now lives on `/setup` for every user
@@ -92,7 +116,8 @@ See [`docs/prospectlord/HANDOFF.md`](docs/prospectlord/HANDOFF.md).
 **Pending (not urgent):**
 - Beta tester feedback — first external user onboarding via the new product gate
 - Case Study Matcher seeding — code complete, waiting on Pentaho PDF from Jon
-- `/api/cron/refresh-all` — weekly refresh + Resend digest
+- `/api/cron/refresh-all` — weekly refresh + digest email (would need an email
+  provider wired; none is installed — Supabase Auth only sends login/invite mail)
 
 ## CELord status: v0 feature-complete
 

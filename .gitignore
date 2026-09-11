@@ -33,6 +33,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the example, which is placeholders only and is what CLAUDE.md
+# points a new teammate at. It was ignored, so the reference went nowhere.
+!.env.local.example
 
 # vercel
 .vercel
