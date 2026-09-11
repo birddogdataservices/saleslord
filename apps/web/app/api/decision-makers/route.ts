@@ -14,8 +14,9 @@ import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildDecisionMakersPrompt, type RawDecisionMaker } from '@/lib/decision-makers-prompt'
 import {
-  webSearchTool, DECISION_MAKERS_DEADLINE_MS, EMIT_TIMEOUT_MS,
+  DECISION_MAKERS_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
+  runSearchLoop, findingsFromFinalTurn,
 } from '@/lib/web-search'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -98,54 +99,37 @@ async function run(request: Request): Promise<Response> {
   })
   const userTurn = `Find the people involved in a software purchase decision at ${prospect.name}.`
 
-  type AntMessage = Anthropic.MessageParam
-  const messages: AntMessage[] = [{ role: 'user', content: userTurn }]
+  let totalInputTokens  = 0
+  let totalOutputTokens = 0
+  let cacheReadTokens   = 0
+  let cacheWriteTokens  = 0
 
-  // 6. Search loop. Same server-tool continuation handling as research: web
-  // search runs inside a single API call, so stop_reason is 'pause_turn' rather
-  // than 'tool_use' when the server-side loop hits its limit. cache_control
-  // caches the growing prefix so continuations re-read it at ~0.1x.
-  let response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 4096,
-    system: systemPrompt,
-    cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool()] as any,
-    messages,
-  })
-  let totalInputTokens  = response.usage.input_tokens
-  let totalOutputTokens = response.usage.output_tokens
-  let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
-  let cacheWriteTokens  = response.usage.cache_creation_input_tokens ?? 0
-
-  // Lower than research's 6 — this stage searches narrowly and should finish
-  // well inside its 120s maxDuration.
+  // 6. Search loop — lib/web-search.ts owns it, shared with research,
+  // check-updates and the A/B harness. It handles pause_turn (web search runs
+  // inside a single API call, so stop_reason is never 'tool_use'), caches the
+  // growing prefix with cache_control, and bounds the run by both a
+  // continuation count and a wall clock.
+  //
+  // maxContinuations is lower than research's 6 — this stage searches narrowly
+  // and should finish well inside its maxDuration.
   const MAX_CONTINUATIONS = 4
-  let continuations = 0
-  while (
-    response.stop_reason === 'pause_turn' &&
-    continuations < MAX_CONTINUATIONS &&
-    Date.now() - startedAt < DECISION_MAKERS_DEADLINE_MS
-  ) {
-    continuations++
-    messages.push({ role: 'assistant', content: response.content })
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: systemPrompt,
-      cache_control: { type: 'ephemeral' },
-      tools: [webSearchTool()] as any,
-      messages,
-    })
-    totalInputTokens  += response.usage.input_tokens
-    totalOutputTokens += response.usage.output_tokens
-    cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
-    cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
-  }
+  const loop = await runSearchLoop({
+    client, model: MODEL, system: systemPrompt, userTurn,
+    maxTokens: 4096,
+    maxContinuations: MAX_CONTINUATIONS,
+    deadlineMs: DECISION_MAKERS_DEADLINE_MS,
+    startedAt,
+    onUsage: u => {
+      totalInputTokens  += u.input_tokens
+      totalOutputTokens += u.output_tokens
+      cacheReadTokens   += u.cache_read_input_tokens ?? 0
+      cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+    },
+  })
 
   // 7. Emit as guaranteed-valid JSON via tool use (phase 2), same two-phase
   // pattern as research — the search call cannot also be forced to emit a tool.
-  const findings = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n').trim()
+  const findings = findingsFromFinalTurn(loop)
 
   let raw: RawDecisionMaker[]
   try {

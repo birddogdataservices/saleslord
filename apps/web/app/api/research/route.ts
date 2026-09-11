@@ -4,8 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildSystemPrompt } from '@/lib/research-prompt'
 import {
-  webSearchTool, RESEARCH_DEADLINE_MS, EMIT_TIMEOUT_MS,
+  RESEARCH_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
+  runSearchLoop, findingsFromAllTurns, type SearchLoopResult,
 } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
@@ -106,31 +107,39 @@ async function run(request: Request): Promise<Response> {
     today.getMonth() + 1
   ) + `\n\n${languageDirective(profile.locale)} ${JSON_LANGUAGE_RULE}`
 
-  type AntMessage = Anthropic.MessageParam
-  const messages: AntMessage[] = [
-    { role: 'user', content: `Research this company for my B2B sales pipeline: ${query.trim()}` }
-  ]
+  const userTurn = `Research this company for my B2B sales pipeline: ${query.trim()}`
 
-  // Top-level cache_control marks the last cacheable block automatically, so the
-  // prefix — system prompt, then the accumulated search findings — is cached and
-  // re-read at ~0.1x on every continuation below. Without it each continuation
-  // resends the whole growing conversation at full price, and there can be seven
-  // of them. The same system prompt also feeds the phase-2 emit call, so that
-  // reads from this cache too.
-  // The first call is the one that cannot fail safely — with no findings there
-  // is nothing to compose a brief from. Continuations below are wrapped and can
-  // be skipped; this one gets a clear message instead of a raw 500, because a
-  // rep who waited two minutes deserves to know what happened and that their
-  // existing brief is untouched.
-  let response: Anthropic.Message
+  let totalInputTokens  = 0
+  let totalOutputTokens = 0
+  let cacheReadTokens   = 0
+  let cacheWriteTokens  = 0
+
+  // The pause_turn continuation loop lives in lib/web-search.ts — one tested
+  // copy, shared by the three search routes and the A/B harness. It owns the
+  // cache_control prefix, the tool declaration, and both guards (continuation
+  // count AND wall clock, because counting continuations does not bound time).
+  // A continuation that fails is swallowed there, keeping what was gathered.
+  //
+  // The FIRST call is the one that cannot fail safely — with no findings there
+  // is nothing to compose a brief from — and runSearchLoop deliberately lets
+  // that one propagate. Catching it here turns it into a clear 504 instead of a
+  // raw 500, because a rep who waited two minutes deserves to know what happened
+  // and that their existing brief is untouched.
+  const MAX_CONTINUATIONS = 6
+  let loop: SearchLoopResult
   try {
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: systemPrompt,
-      cache_control: { type: 'ephemeral' },
-      tools: [webSearchTool()] as any,
-      messages,
+    loop = await runSearchLoop({
+      client, model: MODEL, system: systemPrompt, userTurn,
+      maxTokens: 4096,
+      maxContinuations: MAX_CONTINUATIONS,
+      deadlineMs: RESEARCH_DEADLINE_MS,
+      startedAt,
+      onUsage: u => {
+        totalInputTokens  += u.input_tokens
+        totalOutputTokens += u.output_tokens
+        cacheReadTokens   += u.cache_read_input_tokens ?? 0
+        cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+      },
     })
   } catch (err) {
     console.error('[research] Initial search call failed:', err instanceof Error ? err.message : err)
@@ -139,78 +148,23 @@ async function run(request: Request): Promise<Response> {
       { status: 504 },
     )
   }
-  let totalInputTokens  = response.usage.input_tokens
-  let totalOutputTokens = response.usage.output_tokens
-  let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
-  let cacheWriteTokens  = response.usage.cache_creation_input_tokens ?? 0
-
-  // web_search is a SERVER-side tool — searches execute inside a single API
-  // call, so stop_reason is never 'tool_use'. When the server-side loop hits
-  // its iteration limit the response comes back with stop_reason 'pause_turn';
-  // continue by appending the assistant content and re-sending (no tool_results,
-  // no extra user message). Cap continuations to stay under Vercel's 300s timeout.
-  // Bounded by BOTH a continuation count and a wall-clock deadline. Counting
-  // continuations does not bound time — a single call can run for minutes — and
-  // the whole route has to finish inside vercel.json's maxDuration or the rep
-  // gets nothing at all. Stopping early with a thinner brief beats timing out.
-  const MAX_CONTINUATIONS = 6
-  let continuations = 0
-  while (
-    response.stop_reason === 'pause_turn' &&
-    continuations < MAX_CONTINUATIONS &&
-    Date.now() - startedAt < RESEARCH_DEADLINE_MS
-  ) {
-    continuations++
-    messages.push({ role: 'assistant', content: response.content })
-
-    // Continuations are best-effort enrichment, not all-or-nothing. If one
-    // times out or errors, keep the findings gathered so far and go compose the
-    // brief — a rep who waited deserves a thinner brief, not an error. Without
-    // this, a single slow call throws away the whole run.
-    try {
-      response = await client.messages.create({
-        model: MODEL,
-        max_tokens: 4096,
-        system: systemPrompt,
-        cache_control: { type: 'ephemeral' },
-        tools: [webSearchTool()] as any,
-        messages,
-      })
-    } catch (err) {
-      console.warn(`[research] continuation ${continuations} failed, composing from findings so far:`,
-        err instanceof Error ? err.message : err)
-      break
-    }
-    totalInputTokens  += response.usage.input_tokens
-    totalOutputTokens += response.usage.output_tokens
-    cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
-    cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
-  }
-
-  // Findings accumulate across every assistant turn, not just the last one —
-  // when a continuation is cut short the earlier turns are all we have.
-  const gathered = messages
-    .filter(m => m.role === 'assistant')
-    .flatMap(m => Array.isArray(m.content) ? m.content : [])
-    .map(b => (typeof b === 'object' && b !== null && 'type' in b && b.type === 'text' ? (b as { text: string }).text : ''))
-    .filter(Boolean)
 
   // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop above can't ALSO be forced to emit a tool (forcing it would
   // stop the search), so this is a dedicated second call: hand the model its own
   // gathered findings and have it return the brief through the emit_result tool,
   // whose input the API serializes as valid JSON — no text parsing, any language.
-  const findings = [
-    ...gathered,
-    ...response.content.map(b => (b.type === 'text' ? b.text : '')),
-  ].filter(Boolean).join('\n').trim()
+  //
+  // Findings accumulate across every assistant turn, not just the last one —
+  // when a continuation is cut short the earlier turns are all we have.
+  const findings = findingsFromAllTurns(loop)
 
   let parsed: any
   try {
     const structured = await generateStructured({
       client, model: MODEL, system: systemPrompt,
       messages: [
-        { role: 'user', content: `Research this company for my B2B sales pipeline: ${query.trim()}` },
+        { role: 'user', content: userTurn },
         { role: 'assistant', content: findings || '(research gathered)' },
         { role: 'user', content: 'Now output the complete brief exactly as specified above, by calling the emit_result tool with the JSON object.' },
       ],

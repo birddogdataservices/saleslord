@@ -90,10 +90,10 @@ export const DECISION_MAKERS_DEADLINE_MS = 150_000 // maxDuration 300s
 // Bounded by BOTH a continuation count and a wall clock, because counting
 // continuations does not bound time: a single call can run for minutes.
 //
-// STATUS: the routes still inline their own copies of this. This is the shared
-// version, currently used by the A/B harness and covered by web-search.test.ts.
-// Migrating research/decision-makers/check-updates onto it is a follow-up that
-// needs its own measured harness run — see docs/prospectlord/HANDOFF.md.
+// All three search routes (research, decision-makers, check-updates) and the
+// A/B harness run THIS function. That is the point: the harness measures the
+// same control flow production executes, and web-search.test.ts covers it
+// offline for free. Do not reintroduce a local copy in a route.
 
 // Structurally what the loop needs from a client. Narrower than Anthropic so a
 // test can supply a stub without a network call or an API key — the loop is our

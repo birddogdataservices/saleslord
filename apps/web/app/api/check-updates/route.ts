@@ -9,8 +9,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import {
-  webSearchTool, CHECK_UPDATES_DEADLINE_MS, EMIT_TIMEOUT_MS,
+  CHECK_UPDATES_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
+  runSearchLoop, findingsFromFinalTurn,
 } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
@@ -203,56 +204,40 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     profile?.voice_samples ?? '',
   ) + `\n\n${languageDirective(profile?.locale)} ${JSON_LANGUAGE_RULE}`
 
-  type AntMessage = Anthropic.MessageParam
-  const messages: AntMessage[] = [{ role: 'user', content: userMessage }]
+  let totalInputTokens  = 0
+  let totalOutputTokens = 0
+  let cacheReadTokens   = 0
+  let cacheWriteTokens  = 0
 
-  // Top-level cache_control caches the prefix so each continuation, and the
-  // phase-2 emit call below, re-read it at ~0.1x instead of full price.
-  let response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1024,
-    system: systemPrompt,
-    cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool()] as any,
-    messages,
-  })
-  let totalInputTokens  = response.usage.input_tokens
-  let totalOutputTokens = response.usage.output_tokens
-  let cacheReadTokens   = response.usage.cache_read_input_tokens ?? 0
-  let cacheWriteTokens  = response.usage.cache_creation_input_tokens ?? 0
-
-  // web_search is a SERVER-side tool — searches execute inside a single API
-  // call, so stop_reason is never 'tool_use'. 'pause_turn' means the server-side
-  // loop hit its limit; continue by appending the assistant content and
-  // re-sending (no tool_results, no extra user message).
+  // Search loop — lib/web-search.ts owns it, shared with research,
+  // decision-makers and the A/B harness. It handles pause_turn (web search is a
+  // SERVER-side tool, so searches run inside a single API call and stop_reason
+  // is never 'tool_use'), sends cache_control so each continuation and the
+  // phase-2 emit call below re-read the prefix at ~0.1x, and bounds the run by
+  // both a continuation count and a wall clock.
+  //
+  // max_tokens stays at 1024 here: this route asks "what changed", not for a
+  // brief, and the emit call is what produces the output the rep reads.
   const MAX_CONTINUATIONS = 4  // check-updates is narrower than research
-  let continuations = 0
-  while (
-    response.stop_reason === 'pause_turn' &&
-    continuations < MAX_CONTINUATIONS &&
-    Date.now() - startedAt < CHECK_UPDATES_DEADLINE_MS
-  ) {
-    continuations++
-    messages.push({ role: 'assistant', content: response.content })
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      cache_control: { type: 'ephemeral' },
-      tools: [webSearchTool()] as any,
-      messages,
-    })
-    totalInputTokens  += response.usage.input_tokens
-    totalOutputTokens += response.usage.output_tokens
-    cacheReadTokens   += response.usage.cache_read_input_tokens ?? 0
-    cacheWriteTokens  += response.usage.cache_creation_input_tokens ?? 0
-  }
+  const loop = await runSearchLoop({
+    client, model: MODEL, system: systemPrompt, userTurn: userMessage,
+    maxTokens: 1024,
+    maxContinuations: MAX_CONTINUATIONS,
+    deadlineMs: CHECK_UPDATES_DEADLINE_MS,
+    startedAt,
+    onUsage: u => {
+      totalInputTokens  += u.input_tokens
+      totalOutputTokens += u.output_tokens
+      cacheReadTokens   += u.cache_read_input_tokens ?? 0
+      cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+    },
+  })
 
   // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop can't also be forced to emit a tool, so this dedicated call
   // hands the model its own findings and has it return the result through emit_result
   // (either {"found": false} or the full object). No text parsing, any language.
-  const findings = response.content.map(b => (b.type === 'text' ? b.text : '')).join('\n').trim()
+  const findings = findingsFromFinalTurn(loop)
 
   let parsed: { found: boolean; summary?: string; news_items?: NewsItem[] }
   try {
