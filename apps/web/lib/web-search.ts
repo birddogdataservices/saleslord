@@ -129,8 +129,8 @@ type AnthropicUsage = {
 
 export type SearchLoopResult = {
   // Every assistant turn appended during the loop, in order. The FINAL turn is
-  // deliberately not in here — it is `final` — so callers choose whether to
-  // compose from all turns or only the last.
+  // not in here — it is `final` — because the loop appends a turn only when it
+  // is about to continue past it. findingsFromAllTurns reads both.
   messages: { role: 'user' | 'assistant'; content: unknown }[]
   final: any                                                    // eslint-disable-line @typescript-eslint/no-explicit-any
   continuations: number
@@ -184,8 +184,18 @@ export async function runSearchLoop(opts: SearchLoopOptions): Promise<SearchLoop
   return { messages, final: response, continuations }
 }
 
-// Text from every assistant turn, in order — what research composes from. When a
-// continuation is cut short, the earlier turns are all there is.
+// Text from every assistant turn, in order — the ONE way findings are composed.
+//
+// decision-makers and check-updates used to read only the final turn. That was
+// never a decision, and it was a bug: when a continuation is cut short by the
+// deadline or a timeout, the earlier turns are all there is, and reading the
+// last one silently discarded every search paid for before it — producing a
+// thin answer that looks like a normal one. The rep cannot tell.
+//
+// At zero continuations this returns exactly the final turn's text, so the two
+// old behaviours coincide on the path live runs actually take (all four runs of
+// the 2026-09-11 baseline made a single search call). The difference only
+// appears once pause_turn fires, which is where the old behaviour lost data.
 export function findingsFromAllTurns(result: SearchLoopResult): string {
   const earlier = result.messages
     .filter(m => m.role === 'assistant')
@@ -193,11 +203,4 @@ export function findingsFromAllTurns(result: SearchLoopResult): string {
     .map(b => (typeof b === 'object' && b !== null && 'type' in b && (b as any).type === 'text' ? (b as { text: string }).text : ''))  // eslint-disable-line @typescript-eslint/no-explicit-any
   const last = (result.final.content ?? []).map((b: any) => (b.type === 'text' ? b.text : ''))  // eslint-disable-line @typescript-eslint/no-explicit-any
   return [...earlier, ...last].filter(Boolean).join('\n').trim()
-}
-
-// Text from the final turn only — what decision-makers and check-updates do
-// today. Kept distinct rather than unified so the harness can mirror each route
-// exactly; see the backlog note about the two routes dropping earlier findings.
-export function findingsFromFinalTurn(result: SearchLoopResult): string {
-  return (result.final.content ?? []).map((b: any) => (b.type === 'text' ? b.text : '')).join('\n').trim()  // eslint-disable-line @typescript-eslint/no-explicit-any
 }

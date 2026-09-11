@@ -16,7 +16,7 @@ import { buildDecisionMakersPrompt, type RawDecisionMaker } from '@/lib/decision
 import {
   DECISION_MAKERS_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
-  runSearchLoop, findingsFromFinalTurn,
+  runSearchLoop, findingsFromAllTurns,
 } from '@/lib/web-search'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -129,7 +129,7 @@ async function run(request: Request): Promise<Response> {
 
   // 7. Emit as guaranteed-valid JSON via tool use (phase 2), same two-phase
   // pattern as research — the search call cannot also be forced to emit a tool.
-  const findings = findingsFromFinalTurn(loop)
+  const findings = findingsFromAllTurns(loop)
 
   let raw: RawDecisionMaker[]
   try {

@@ -11,7 +11,7 @@ import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import {
   CHECK_UPDATES_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
-  runSearchLoop, findingsFromFinalTurn,
+  runSearchLoop, findingsFromAllTurns,
 } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
@@ -237,7 +237,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   // The web-search loop can't also be forced to emit a tool, so this dedicated call
   // hands the model its own findings and has it return the result through emit_result
   // (either {"found": false} or the full object). No text parsing, any language.
-  const findings = findingsFromFinalTurn(loop)
+  const findings = findingsFromAllTurns(loop)
 
   let parsed: { found: boolean; summary?: string; news_items?: NewsItem[] }
   try {

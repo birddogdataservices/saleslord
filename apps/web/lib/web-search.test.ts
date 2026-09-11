@@ -22,7 +22,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runSearchLoop, findingsFromAllTurns, findingsFromFinalTurn, type SearchLoopClient } from './web-search'
+import { runSearchLoop, findingsFromAllTurns, type SearchLoopClient } from './web-search'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stub client
@@ -189,17 +189,35 @@ test('tallies usage once per successful call, and not for the failed one', async
   assert.deepEqual(seen, [10, 10])
 })
 
-test('findingsFromFinalTurn reads only the last turn', async () => {
-  // Mirrors what decision-makers and check-updates do today. Documented as a
-  // backlog item, asserted here so a silent change to either is visible.
-  const { client } = stubClient([
-    reply('pause_turn', 'dropped'),
-    reply('end_turn', 'kept'),
-  ])
+test('at zero continuations, all-turn findings ARE the final turn', async () => {
+  // This is what made the decision-makers / check-updates switch to all-turn
+  // findings safe to land without its own live measurement. Both routes used to
+  // read only response.content; when the loop makes a single call — which is
+  // what every stage of all four 2026-09-11 baseline runs did — the composed
+  // string is byte-identical to that. The behaviour only diverges once
+  // pause_turn fires, and that is the case the old code got wrong.
+  const { client } = stubClient([reply('end_turn', 'only turn')])
   const r = await runSearchLoop({ ...base, client })
 
-  assert.equal(findingsFromFinalTurn(r), 'kept')
-  assert.equal(findingsFromAllTurns(r), 'dropped\nkept')
+  assert.equal(r.continuations, 0)
+  assert.deepEqual(r.messages.filter(m => m.role === 'assistant'), [])
+  assert.equal(findingsFromAllTurns(r), 'only turn')
+})
+
+test('a cut-short run keeps the turns the old final-turn read discarded', async () => {
+  // The bug this replaced: three search calls paid for, two of them thrown away
+  // because the deadline stopped the loop and only the last turn was read.
+  const { client } = stubClient([
+    reply('pause_turn', 'turn one'),
+    reply('pause_turn', 'turn two'),
+    reply('pause_turn', 'turn three'),
+  ])
+  const r = await runSearchLoop({ ...base, client, maxContinuations: 2 })
+
+  const composed = findingsFromAllTurns(r)
+  assert.match(composed, /turn one/)
+  assert.match(composed, /turn two/)
+  assert.match(composed, /turn three/)
 })
 
 test('passes thinking and effort through when set, and omits them when not', async () => {

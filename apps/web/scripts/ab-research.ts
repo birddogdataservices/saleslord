@@ -51,7 +51,7 @@ import { languageDirective, JSON_LANGUAGE_RULE } from '../lib/i18n/languages'
 import {
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, EMIT_TIMEOUT_MS,
   RESEARCH_DEADLINE_MS, DECISION_MAKERS_DEADLINE_MS,
-  runSearchLoop, findingsFromAllTurns, findingsFromFinalTurn,
+  runSearchLoop, findingsFromAllTurns,
 } from '../lib/web-search'
 import { calculateCost } from '../lib/utils'
 import type { ProductPromptContext } from '../lib/types'
@@ -355,8 +355,8 @@ async function runStage2(client: Anthropic, cfg: Config, ctx: RepContext, g: Gro
     })
     const continuations = loop.continuations
 
-    // Final turn only — mirrors the route. See findingsFromFinalTurn.
-    const findings = findingsFromFinalTurn(loop)
+    // Every assistant turn, same as stage 1 and same as the route.
+    const findings = findingsFromAllTurns(loop)
 
     const structured = await generateStructured({
       client, model: cfg.model, system,
