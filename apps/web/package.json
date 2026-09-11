@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
-    "ab:research": "tsx --env-file=.env.local scripts/ab-research.ts"
+    "ab:research": "tsx --env-file=.env.local scripts/ab-research.ts",
+    "test": "node --import tsx --test lib/web-search.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

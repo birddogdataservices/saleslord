@@ -49,8 +49,9 @@ import { buildProductsBlock, type ProductForPrompt } from '../lib/prospect-conte
 import { generateStructured } from '../lib/structured-output'
 import { languageDirective, JSON_LANGUAGE_RULE } from '../lib/i18n/languages'
 import {
-  webSearchTool, ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, EMIT_TIMEOUT_MS,
+  ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, EMIT_TIMEOUT_MS,
   RESEARCH_DEADLINE_MS, DECISION_MAKERS_DEADLINE_MS,
+  runSearchLoop, findingsFromAllTurns, findingsFromFinalTurn,
 } from '../lib/web-search'
 import { calculateCost } from '../lib/utils'
 import type { ProductPromptContext } from '../lib/types'
@@ -150,7 +151,15 @@ function newUsage(): Usage {
   return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
 }
 
-function addMessageUsage(acc: Usage, u: Anthropic.Usage) {
+// Structural, not Anthropic.Usage — that type grew several fields across the
+// 0.81 → 0.125 upgrade (cache_creation, inference_geo, service_tier, …) and this
+// only ever reads four of them.
+function addMessageUsage(acc: Usage, u: {
+  input_tokens: number
+  output_tokens: number
+  cache_read_input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+}) {
   acc.inputTokens      += u.input_tokens
   acc.outputTokens     += u.output_tokens
   acc.cacheReadTokens  += u.cache_read_input_tokens ?? 0
@@ -162,81 +171,6 @@ function addStructuredUsage(acc: Usage, s: { inputTokens: number; outputTokens: 
   acc.outputTokens     += s.outputTokens
   acc.cacheReadTokens  += s.cacheReadTokens
   acc.cacheWriteTokens += s.cacheWriteTokens
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// The search loop — identical handling in both routes, so it lives here once
-// ─────────────────────────────────────────────────────────────────────────────
-// web_search is a SERVER-side tool: searches execute inside a single API call,
-// so stop_reason is never 'tool_use'. When the server-side loop hits its
-// iteration limit the response comes back 'pause_turn'; continue by appending
-// the assistant content and re-sending — no tool_results, no extra user message.
-//
-// Bounded by BOTH a continuation count and a wall-clock deadline, because
-// counting continuations does not bound time: one call can run for minutes.
-
-async function searchLoop(args: {
-  client: Anthropic
-  cfg: Config
-  system: string
-  userTurn: string
-  maxContinuations: number
-  deadlineMs: number
-  startedAt: number
-  usage: Usage
-}): Promise<{ messages: Anthropic.MessageParam[]; final: Anthropic.Message; continuations: number }> {
-  const { client, cfg, system, userTurn, maxContinuations, deadlineMs, startedAt, usage } = args
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userTurn }]
-
-  const body: Record<string, unknown> = {
-    model: cfg.model,
-    max_tokens: cfg.searchMaxTokens,
-    system,
-    // Top-level cache_control marks the last cacheable block automatically, so
-    // the prefix is re-read at ~0.1x on every continuation and by the emit call.
-    cache_control: { type: 'ephemeral' },
-    tools: [webSearchTool()],
-  }
-  if (cfg.thinking) body.thinking = cfg.thinking
-  if (cfg.effort) body.output_config = { effort: cfg.effort }
-
-  let response = await client.messages.create({ ...body, messages } as never)
-  addMessageUsage(usage, response.usage)
-
-  let continuations = 0
-  while (
-    response.stop_reason === 'pause_turn' &&
-    continuations < maxContinuations &&
-    Date.now() - startedAt < deadlineMs
-  ) {
-    continuations++
-    messages.push({ role: 'assistant', content: response.content })
-    // Mirrors the routes: a failed continuation keeps what was gathered rather
-    // than throwing the whole run away.
-    try {
-      response = await client.messages.create({ ...body, messages } as never)
-    } catch { break }
-    addMessageUsage(usage, response.usage)
-  }
-
-  return { messages, final: response, continuations }
-}
-
-// Text from every assistant turn, in order. The research route composes from all
-// of them — when a continuation is cut short the earlier turns are all there is.
-function findingsFromAllTurns(messages: Anthropic.MessageParam[], final: Anthropic.Message): string {
-  const earlier = messages
-    .filter(m => m.role === 'assistant')
-    .flatMap(m => (Array.isArray(m.content) ? m.content : []))
-    .map(b => (typeof b === 'object' && b !== null && 'type' in b && b.type === 'text' ? (b as { text: string }).text : ''))
-  const last = final.content.map(b => (b.type === 'text' ? b.text : ''))
-  return [...earlier, ...last].filter(Boolean).join('\n').trim()
-}
-
-// Text from the final turn only. This is what the decision-makers route does —
-// mirrored, not corrected, because the harness exists to measure what ships.
-function findingsFromFinalTurn(final: Anthropic.Message): string {
-  return final.content.map(b => (b.type === 'text' ? b.text : '')).join('\n').trim()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -316,14 +250,19 @@ async function runStage1(client: Anthropic, cfg: Config, ctx: RepContext, query:
 
   const base = { stage: 1 as const, label: 'research', continuations: 0, searchCalls: 0 }
   try {
-    const { messages, final, continuations } = await searchLoop({
-      client, cfg, system, userTurn,
+    const loop = await runSearchLoop({
+      client, model: cfg.model, system, userTurn,
+      maxTokens: cfg.searchMaxTokens,
       maxContinuations: MAX_CONTINUATIONS_RESEARCH,
       deadlineMs: RESEARCH_DEADLINE_MS,
-      startedAt, usage,
+      startedAt,
+      thinking: cfg.thinking,
+      effort: cfg.effort,
+      onUsage: u => addMessageUsage(usage, u),
     })
+    const continuations = loop.continuations
 
-    const findings = findingsFromAllTurns(messages, final)
+    const findings = findingsFromAllTurns(loop)
 
     const structured = await generateStructured({
       client, model: cfg.model, system,
@@ -404,15 +343,20 @@ async function runStage2(client: Anthropic, cfg: Config, ctx: RepContext, g: Gro
 
   const base = { stage: 2 as const, label: 'decision-makers', continuations: 0, searchCalls: 0 }
   try {
-    const { final, continuations } = await searchLoop({
-      client, cfg, system, userTurn,
+    const loop = await runSearchLoop({
+      client, model: cfg.model, system, userTurn,
+      maxTokens: cfg.searchMaxTokens,
       maxContinuations: MAX_CONTINUATIONS_DM,
       deadlineMs: DECISION_MAKERS_DEADLINE_MS,
-      startedAt, usage,
+      startedAt,
+      thinking: cfg.thinking,
+      effort: cfg.effort,
+      onUsage: u => addMessageUsage(usage, u),
     })
+    const continuations = loop.continuations
 
     // Final turn only — mirrors the route. See findingsFromFinalTurn.
-    const findings = findingsFromFinalTurn(final)
+    const findings = findingsFromFinalTurn(loop)
 
     const structured = await generateStructured({
       client, model: cfg.model, system,

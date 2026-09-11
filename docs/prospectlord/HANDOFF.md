@@ -44,18 +44,48 @@ roughly the same as stage 1 — it reads a large cached prefix and searches just
 as hard. Still inside the $0.50–$1.00 budget, but at the top of it, not the
 bottom. This is exactly what a combined number was hiding.
 
-### The gap this session did NOT close — read before touching the search loop
+### The `pause_turn` loop — what the live runs missed, and what covers it now
 
-**The `pause_turn` continuation loop is still unverified.** Every stage on all
-four runs made exactly **one** search call; the server-side loop finished inside
-a single API call and never returned `pause_turn`. Searching was clearly
-happening (96k–186k cache-read tokens per stage), just internally.
+Every stage on all four runs made exactly **one** search call. The server-side
+search finished inside a single API call and never returned `pause_turn`, so the
+continuation loop never executed. Four live runs, ~$3 spent, zero coverage of
+the most fragile code in the app.
 
-So: the SDK upgrade is confirmed safe for `cache_control` placement and forced
-`tool_choice`, and **is not confirmed safe for the continuation loop**. The
-2026-09-08 record observed six continuations on this same model and prospect, so
-this is a behaviour change worth understanding on its own. Find a prospect that
-triggers `pause_turn` before trusting that code or refactoring it.
+**This is not a regression, and the drop from the 2026-09-08 record's six
+continuations is mostly explained.** That run was the pre-split monolith — one
+prompt doing company research, news, decision makers *and* the email draft.
+Stage 1 today does company, news and fit only. Roughly half the work in the same
+call, so finishing in one pass is the expected outcome. The prompt also changed
+between those dates. Nothing here needs investigating.
+
+What it left was a coverage gap, now closed two ways:
+
+1. **The API contract is verified.** `StopReason` carries `pause_turn`
+   identically in 0.81 and 0.125 — 0.125 only *adds*
+   `model_context_window_exceeded` (benign for us: both loops treat any
+   non-`pause_turn` reason as "done" and compose from findings so far).
+2. **The loop logic is tested offline.** `lib/web-search.test.ts` — 11 cases via
+   a stub client: continuation, message accumulation, `MAX_CONTINUATIONS`, the
+   wall-clock deadline, partial findings kept when a continuation throws, first
+   call propagating, `cache_control` on every call. Free, deterministic, and it
+   runs on every future SDK bump instead of costing $3 and proving nothing.
+
+```bash
+pnpm --filter @saleslord/web test
+```
+
+**Do not go hunting for a prospect heavy enough to trigger `pause_turn`.** The
+ceiling is undocumented and search volume varies per company, so it is guesswork
+at ~$0.75 a run. The one thing still uncovered is narrow — whether a *live*
+`pause_turn` response body has the content shape we append — and it is worth a
+single targeted run if one ever turns up naturally, not a search.
+
+**The routes still inline their own copies of the loop.** `runSearchLoop` in
+`lib/web-search.ts` is the shared, tested version, currently used only by the
+harness. Migrating `research`, `decision-makers` and `check-updates` onto it is
+the natural follow-up — it would delete three copies, fix the findings-accumulation
+split below, and put the tested code on the production path. It touches the AI
+path, so it needs its own measured harness run.
 
 ---
 
@@ -165,18 +195,16 @@ both create-brief and find-decision-makers.
 
 ## Top priority for the next session
 
-### 1. Find out why `pause_turn` never fires — DONE? no, opened by Session 14
+### 1. Migrate the routes onto `runSearchLoop`
 
-Not a regression, but an unexplained behaviour change, and it leaves the
-riskiest code in the app unexercised. On 2026-09-08 Sonnet 4.6 took six
-continuations on "State of Massachusetts"; on 2026-09-11 the same model and
-prospect took **one search call on every one of four runs**. Either the
-server-side search loop now completes internally, or something in the prompt
-changed what it asks for.
+`research`, `decision-makers` and `check-updates` each inline their own copy of
+the continuation loop, with differences that are bugs rather than intent (see the
+findings-accumulation item in the backlog). `lib/web-search.ts` now exports the
+shared, tested version; only the harness uses it.
 
-Until this is understood, `MAX_CONTINUATIONS`, the `*_DEADLINE_MS` guards and
-the continuation error handling in both search routes are untested code. Find a
-prospect that triggers `pause_turn` and add it to the harness panel.
+Moving the three routes onto it deletes the duplication, fixes the accumulation
+split, and puts tested code on the production path. It touches the AI path, so:
+one change, then a harness run against the 2026-09-11 baseline before merging.
 
 ### 2. Then the model evaluation
 

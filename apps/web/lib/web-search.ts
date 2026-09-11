@@ -73,3 +73,131 @@ export const EMIT_TIMEOUT_MS = 60_000
 export const RESEARCH_DEADLINE_MS = 200_000        // maxDuration 300s
 export const CHECK_UPDATES_DEADLINE_MS = 200_000   // maxDuration 300s
 export const DECISION_MAKERS_DEADLINE_MS = 150_000 // maxDuration 300s
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The continuation loop
+// ─────────────────────────────────────────────────────────────────────────────
+// web_search is a SERVER-side tool: the searches run inside a single API call,
+// so stop_reason is never 'tool_use'. When Anthropic's internal search loop hits
+// its ceiling mid-turn the call returns early with stop_reason 'pause_turn',
+// meaning "not finished — send this back and I will carry on". Continue by
+// appending the assistant content and re-sending: no tool_results, no extra user
+// message.
+//
+// If nothing handles that flag, a paused run simply stops and the brief gets
+// composed from half the research — silently, looking like a normal brief.
+//
+// Bounded by BOTH a continuation count and a wall clock, because counting
+// continuations does not bound time: a single call can run for minutes.
+//
+// STATUS: the routes still inline their own copies of this. This is the shared
+// version, currently used by the A/B harness and covered by web-search.test.ts.
+// Migrating research/decision-makers/check-updates onto it is a follow-up that
+// needs its own measured harness run — see docs/prospectlord/HANDOFF.md.
+
+// Structurally what the loop needs from a client. Narrower than Anthropic so a
+// test can supply a stub without a network call or an API key — the loop is our
+// control flow, and control flow should not cost $0.75 to verify.
+export type SearchLoopClient = {
+  messages: { create(body: any, options?: any): Promise<any> }  // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+
+export type SearchLoopOptions = {
+  client: SearchLoopClient
+  model: string
+  system: string
+  userTurn: string
+  maxTokens: number
+  maxContinuations: number
+  deadlineMs: number
+  thinking?: { type: 'disabled' } | { type: 'adaptive' }
+  effort?: 'low' | 'medium' | 'high' | 'xhigh'
+  // Called once per successful call so the caller can tally tokens.
+  onUsage?: (usage: AnthropicUsage) => void
+  // Injectable clock. Production leaves it alone; the test drives the deadline
+  // without waiting 200 real seconds for it.
+  now?: () => number
+  startedAt?: number
+}
+
+type AnthropicUsage = {
+  input_tokens: number
+  output_tokens: number
+  cache_read_input_tokens?: number | null
+  cache_creation_input_tokens?: number | null
+}
+
+export type SearchLoopResult = {
+  // Every assistant turn appended during the loop, in order. The FINAL turn is
+  // deliberately not in here — it is `final` — so callers choose whether to
+  // compose from all turns or only the last.
+  messages: { role: 'user' | 'assistant'; content: unknown }[]
+  final: any                                                    // eslint-disable-line @typescript-eslint/no-explicit-any
+  continuations: number
+}
+
+export async function runSearchLoop(opts: SearchLoopOptions): Promise<SearchLoopResult> {
+  const now = opts.now ?? Date.now
+  const startedAt = opts.startedAt ?? now()
+
+  const messages: { role: 'user' | 'assistant'; content: unknown }[] = [
+    { role: 'user', content: opts.userTurn },
+  ]
+
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    max_tokens: opts.maxTokens,
+    system: opts.system,
+    // Top-level cache_control marks the last cacheable block automatically, so
+    // the prefix is re-read at ~0.1x on every continuation and by the emit call.
+    cache_control: { type: 'ephemeral' },
+    tools: [webSearchTool()],
+  }
+  if (opts.thinking) body.thinking = opts.thinking
+  if (opts.effort) body.output_config = { effort: opts.effort }
+
+  let response = await opts.client.messages.create({ ...body, messages })
+  opts.onUsage?.(response.usage)
+
+  let continuations = 0
+  while (
+    response.stop_reason === 'pause_turn' &&
+    continuations < opts.maxContinuations &&
+    now() - startedAt < opts.deadlineMs
+  ) {
+    continuations++
+    messages.push({ role: 'assistant', content: response.content })
+
+    // Continuations are best-effort enrichment, not all-or-nothing. A rep who
+    // waited two minutes deserves a thinner brief, not an error — so a failed
+    // continuation keeps what was gathered and stops.
+    let next
+    try {
+      next = await opts.client.messages.create({ ...body, messages })
+    } catch {
+      break
+    }
+    response = next
+    opts.onUsage?.(response.usage)
+  }
+
+  return { messages, final: response, continuations }
+}
+
+// Text from every assistant turn, in order — what research composes from. When a
+// continuation is cut short, the earlier turns are all there is.
+export function findingsFromAllTurns(result: SearchLoopResult): string {
+  const earlier = result.messages
+    .filter(m => m.role === 'assistant')
+    .flatMap(m => (Array.isArray(m.content) ? m.content : []))
+    .map(b => (typeof b === 'object' && b !== null && 'type' in b && (b as any).type === 'text' ? (b as { text: string }).text : ''))  // eslint-disable-line @typescript-eslint/no-explicit-any
+  const last = (result.final.content ?? []).map((b: any) => (b.type === 'text' ? b.text : ''))  // eslint-disable-line @typescript-eslint/no-explicit-any
+  return [...earlier, ...last].filter(Boolean).join('\n').trim()
+}
+
+// Text from the final turn only — what decision-makers and check-updates do
+// today. Kept distinct rather than unified so the harness can mirror each route
+// exactly; see the backlog note about the two routes dropping earlier findings.
+export function findingsFromFinalTurn(result: SearchLoopResult): string {
+  return (result.final.content ?? []).map((b: any) => (b.type === 'text' ? b.text : '')).join('\n').trim()  // eslint-disable-line @typescript-eslint/no-explicit-any
+}

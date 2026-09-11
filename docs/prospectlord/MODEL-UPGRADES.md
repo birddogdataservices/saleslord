@@ -175,16 +175,16 @@ corroboration signal Phase 1 wants, arrived at by hand.
 
 Two caveats, both load-bearing:
 
-- **The `pause_turn` path was never exercised.** Every stage on all four runs
-  made exactly **one** search call — the server-side loop completed inside a
-  single API call and never returned `pause_turn`. Search volume was high
-  (96k–186k cache-read tokens per stage), it just all happened internally. So
-  `MAX_CONTINUATIONS` and the `*_DEADLINE_MS` guards are currently protecting a
-  path production does not take on this prospect, and no comparison run has
-  tested the continuation loop since v1.7.0. Note that the 2026-09-08 record
-  below observed *six* continuations on the same model — so this is a change in
-  behaviour, not a property of the loop. Worth finding a prospect that triggers
-  it before trusting that code.
+- **The `pause_turn` path was never exercised by these runs.** Every stage made
+  exactly **one** search call — the server-side loop completed inside a single
+  API call. Search volume was high (96k–186k cache-read tokens per stage), it
+  just all happened internally. The 2026-09-08 record below shows *six*
+  continuations, but that was the pre-split monolith doing roughly twice the work
+  in one call, so this is expected, not a regression.
+  **Live runs are the wrong tool for that loop** — the ceiling is undocumented,
+  so triggering it is guesswork at ~$0.75 a run. It is covered offline instead by
+  `apps/web/lib/web-search.test.ts` (`pnpm --filter @saleslord/web test`), and
+  the `StopReason` union carries `pause_turn` identically in 0.81 and 0.125.
 - **`statsFilled` in the harness output counts non-null, not correct.**
   `"N/A — state government"` scores the same as a dollar figure. It is a change
   detector, not a quality score. Read `stats` in the JSON.
