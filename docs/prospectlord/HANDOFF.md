@@ -63,6 +63,10 @@ be run. It now times and prices stage 1 (`/api/research`) and stage 2
   routes append — it was measuring a prompt production never sends.
 - Mirrors each route's findings handling rather than correcting it: stage 1
   accumulates across every assistant turn, stage 2 reads the final turn only.
+
+  > **Corrected by Session 15:** the split it was mirroring was a bug, not
+  > intent. Both stages now compose from every assistant turn, in the routes
+  > and in the harness alike, and `findingsFromFinalTurn` is gone.
 - Default `--configs` is now `a` alone. It was `a,b,c,d`, so a bare invocation
   spent on three Sonnet 5 runs nobody asked for.
 - Still writes nothing to the database; still confirms before spending.

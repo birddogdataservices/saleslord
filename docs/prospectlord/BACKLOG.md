@@ -12,11 +12,69 @@ Items are roughly priority-ordered within each section.
 
 ## 🟡 Should have (product is awkward without these)
 
+- [ ] **Web search cost is not in the ledger (cost under-reported)** — Anthropic
+  bills the server-side web search tool at **$10 per 1,000 searches**, on top of
+  tokens. The SDK reports the count as `usage.server_tool_use.web_search_requests`
+  (confirmed present in 0.125), and nothing in the codebase reads it, so
+  `api_usage` records only the token half of the bill for research,
+  decision-makers and check-updates — the three search-heaviest routes.
+
+  This matters more here than it would elsewhere: BYOK means the rep is spending
+  their own card, `lib/costs.ts` quotes them a price before they commit, and the
+  number they are shown is systematically LOW. At 10–30 searches a stage that is
+  $0.10–$0.30 per stage unaccounted, so a "$0.75" brief may really be $0.95+.
+
+  **Session 15 added logging, not billing** — each route now logs its search
+  count, so the real magnitude can be read off production runs before the ledger
+  changes. Once there are numbers:
+  1. `api_usage` needs a `web_search_requests int not null default 0` column
+     (migration) — the count is worth storing raw, not just folded into
+     `cost_usd`, so historical rows stay re-pricable if the rate changes.
+  2. `calculateCost` in `lib/utils.ts` takes the count and adds
+     `searches * 0.01`. Keep it a named constant next to `PRICING`.
+  3. `logUsage` threads it through; `lib/costs.ts` estimates get revisited.
+
+  Related latent trap found in the same audit: `CACHE_WRITE_MULTIPLIER` is 1.25x,
+  correct for the 5-minute ephemeral cache in use. The **1-hour** cache write is
+  **2x**. If anyone ever sets `ttl: '1h'`, that multiplier is silently wrong.
+
 - [x] Check for Updates — `POST /api/check-updates`, append-only blurb history, `UpdateBlurbs` component, `CheckUpdatesButton` in topbar
 - [x] **Decision maker targeting tiers** — `targeting_tier` + `tier_reasoning` on `decision_makers`; `team_config` singleton for shared seniority bands + target functions; chip UI in setup page (admin-edit, all reps read); research prompt tiers each DM; cards sort prime_target → intel_only → low_signal; single flat list, no sections. **Updated 2026-09-08:** tier badge + `tier_reasoning` now render on each card, on screen and in the exported PDF — the tiers were computed and stored but invisible, so a rep could not tell which names were worth approaching or why. Sorting alone did not communicate it.
 
 - [ ] Vercel cron wired (`vercel.json` already has the schedule)
 - [ ] Product selector in "Add prospect" flow — when multiple products exist, let rep pick which to research against
+- [ ] **Purchasing-power metric (replaces the fixed `revenue` stat)** — every
+  organization has *some* indicator of ability to spend; which one depends on
+  what it is. Public company → revenue. SLED → enacted budget or appropriation.
+  Private → estimated revenue or funding raised. Higher ed → endowment or
+  operating budget. Nonprofit → total expenses.
+
+  Today the model already finds the right figure and has nowhere to put it:
+  `research-prompt.ts` tells it to set `revenue.value` to `"N/A — <entity type>"`
+  and hide the real number in `revenue.context`, while `StatCards.tsx` hardcodes
+  the label `"Revenue (TTM)"`. A rep on a call sees a card headed REVENUE (TTM)
+  reading N/A, with the number they want in 11px grey underneath.
+
+  Root cause: the label lives in the UI and the number lives in the data, so a
+  fixed label cannot describe a variable metric. Fix is a self-describing
+  `ScaleMetric { kind, label, value, value_usd, context, as_of, source_url }`
+  with `kind` validated server-side against a closed set (same pattern as
+  `VALID_ROLES` / `VALID_TIERS` in decision-makers) and `unknown` as the honest
+  fallback. `as_of` must be a field, not prose — an appropriation without its
+  fiscal year is the same class of error as a mislabelled revenue. `value_usd`
+  is what would let **TerritoryLord** sort a territory by purchasing power;
+  derive it from the figure already produced, do not research it separately.
+
+  Keep the existing accuracy rule verbatim — never report a budget as revenue.
+  What changes is that there is finally a right place to put the number, so
+  `N/A` stops being the only honest answer. Must not become pressure to always
+  fill the slot ("more fields filled is not better").
+
+  Touches `lib/types.ts`, `lib/research-prompt.ts`, `components/prospect/
+  StatCards.tsx` and `components/prospect/BriefPdf.tsx`. `stats` is jsonb so no
+  SQL migration is required, but existing briefs need a read-side fallback or
+  they stop rendering. Prompt + schema change on the AI path → its own branch
+  and its own measured run, per MODEL-UPGRADES.md.
 - [x] **Case Study Matcher** — built in session 7. All routes + UI complete. **⚠️ Pending seeding test** — waiting on Pentaho PDF from Jon. Steps when PDF arrives:
   1. Run the Supabase migration in `schema.sql` (case_studies table + RLS)
   2. Create `case-study-slides` Storage bucket (private) in Supabase dashboard

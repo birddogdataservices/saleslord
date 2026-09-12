@@ -103,6 +103,7 @@ async function run(request: Request): Promise<Response> {
   let totalOutputTokens = 0
   let cacheReadTokens   = 0
   let cacheWriteTokens  = 0
+  let webSearchRequests = 0
 
   // 6. Search loop — lib/web-search.ts owns it, shared with research,
   // check-updates and the A/B harness. It handles pause_turn (web search runs
@@ -124,8 +125,19 @@ async function run(request: Request): Promise<Response> {
       totalOutputTokens += u.output_tokens
       cacheReadTokens   += u.cache_read_input_tokens ?? 0
       cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+      webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
     },
   })
+
+  // Loop telemetry — free to collect, and both numbers answer open questions.
+  // continuations: MODEL-UPGRADES.md records the pause_turn path as never having
+  // been exercised by a live run. Logging it turns every real brief into evidence,
+  // instead of spending ~$0.75 a time hunting for a prospect heavy enough to
+  // trigger it.
+  // web searches: billed at $10 per 1,000 ON TOP of the tokens api_usage records,
+  // so this is the size of the gap in the ledger. Not stored yet — closing it
+  // needs an api_usage column. See docs/prospectlord/BACKLOG.md.
+  console.log(`[decision-makers] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (~${(webSearchRequests * 0.01).toFixed(2)} not in api_usage)`)
 
   // 7. Emit as guaranteed-valid JSON via tool use (phase 2), same two-phase
   // pattern as research — the search call cannot also be forced to emit a tool.
