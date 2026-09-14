@@ -1,6 +1,68 @@
 # ProspectLord — Handoff
 
-## Current version: v1.9.0 — search routes on the shared loop
+## Current version: v1.10.0 — web search in the cost ledger; priced, colour-coded actions
+
+---
+
+## Session 16 (2026-09-14) — web search in the cost ledger; every research action states its price
+
+Four commits, plus one migration run on production Supabase before any of the
+code touched a database.
+
+### What shipped
+
+1. **`feat(costs)` — web search is billed in `api_usage`.** Anthropic charges $10
+   per 1,000 searches on top of tokens, and nothing recorded it, so every search
+   route under-reported.
+   - `api_usage.web_search_requests` — nullable on purpose: NULL means "not
+     recorded" (every earlier row, and CELord's direct inserts). Migration
+     `packages/db/migrations/2026-09-14_api_usage_web_search_requests.sql`,
+     **already run on production**.
+   - `calculateCost` adds `WEB_SEARCH_COST_PER_REQUEST`. `logUsage` **requires**
+     the count and the four non-search routes pass 0, so a new search route that
+     forgets it is a type error, not a silently low bill.
+   - `logUsage` now logs a failed insert instead of swallowing it — a lost row also
+     disappeared from `checkDailyLimit`.
+   - The A/B harness reports `costUsd` (tokens + searches) and `tokenCostUsd`.
+     **Compare runs against the 2026-09-11 baseline using `tokenCostUsd`**, or the
+     searches finally being counted will look like a regression.
+   - Tests 12 → 22: `lib/utils.test.ts` (pricing) and `lib/api-usage.test.ts`
+     (the row written, via a stub client).
+2. **`feat(ui)` — Check for Updates and Refresh company state their price.** Both
+   take two clicks, and the confirm step floats the price beneath the button
+   (`components/prospect/CostConfirmHint.tsx`). Check for Updates used to fire on
+   a single click with no price anywhere. New `COST_HINTS.checkUpdates`.
+3. **`feat(ui)` — topbar actions coloured by what they do**, defined once in
+   `lib/action-styles.ts`: research blue, writing purple, free utilities neutral,
+   confirm amber. Regrouped as utilities | research | writing with hairline
+   dividers. Refresh company and Archive had been `--sl-text3`, about 2.7:1 on
+   white; every pairing now clears 4.5:1.
+4. **`feat(ui)` — Find Decision Makers matches.** Blue throughout. The price is a
+   visible caption where the button sits in the card body (invite, retry) and a
+   confirm step where it sits in the section header (refresh). New i18n key
+   `DecisionMakers.confirmRefresh` in all six locales.
+
+### Verified live — localhost, California
+
+check-updates returned `200 in 32.4s` with 0 continuations and **8 web searches
+(+$0.08)**, no `[logUsage]` insert error, and a sidebar job cost of **$0.31**. The
+token cost was therefore about $0.23, and searches were ~26% of the real charge —
+the second measurement of the gap, after 9 searches on 2026-09-13. The confirm
+steps on Refresh company and on the decision-makers Refresh were exercised and
+cancelled; no research or decision-makers call ran.
+
+### Hard-won lessons
+
+1. **Run a migration before exercising the code that writes it — on localhost
+   too.** Local dev writes to the same Supabase project, and an insert that names a
+   missing column fails. `logUsage` now surfaces that; before this session it
+   vanished silently and took the runaway-guard count with it.
+2. **A floating hint needs room, and `overflow-hidden` cards do not give it.** The
+   decision-makers retry button sits at the foot of a clipped card. That is why
+   placement, not preference, decides caption versus confirm step.
+3. **Colour needs one source.** The topbar drifted into three text colours because
+   six buttons each carried an inline copy. New action buttons take their style
+   from `lib/action-styles.ts`.
 
 ---
 
@@ -312,21 +374,20 @@ both create-brief and find-decision-makers.
 
 ## Top priority for the next session
 
-### 1. Close the cost-accuracy gaps Session 15 found
+### 1. Remaining cost and pricing follow-ups
 
-- **Record web searches in `api_usage`** — a column, `calculateCost` takes the
-  count, `logUsage` threads it through. Read real counts off the new log lines
-  first. The plan is in BACKLOG.md.
-- **Price the two unpriced generative buttons** — Check for Updates and Refresh
-  company. BACKLOG.md.
 - **Magic-link redirect** — `app/api/auth/magic-link/route.ts` builds
   `emailRedirectTo` from `NEXT_PUBLIC_APP_URL`, so local magic-link sign-in always
   lands on production. Derive the origin from the request, but check it against an
   allowlist: trusting a spoofed `Host` header would send a live auth code to
   someone else's domain. The two admin-invite call sites should stay on
   `NEXT_PUBLIC_APP_URL` — an invite belongs on production.
-- Re-check `COST_HINTS` once the first research and decision-makers search counts
-  appear in the logs.
+- **CELord's web search is unrecorded** — its enrichment can search, and its routes
+  insert `api_usage` rows directly with token-only costs. A CELord change.
+- **Re-check `COST_HINTS`** once research and decision-makers search counts appear
+  in the `[route] search loop` log lines. Only check-updates has been measured
+  (9 and 8 searches).
+- **Cost hints are English-only** in a six-locale app. BACKLOG.md.
 - Separately queued: the purchasing-power metric that replaces the fixed revenue
   stat. Prompt + schema change on the AI path — own branch, own measured run.
   BACKLOG.md.
