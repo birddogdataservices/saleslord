@@ -12,6 +12,21 @@ Items are roughly priority-ordered within each section.
 
 ## 🟡 Should have (product is awkward without these)
 
+- [ ] **Two generative buttons state no cost (product-principle violation)** —
+  root `CLAUDE.md` requires every generative action to state its cost before the
+  rep commits, because they are spending their own Anthropic key. Found in
+  Session 15:
+  - `components/prospect/CheckUpdatesButton.tsx` fires `POST /api/check-updates`
+    on a single click — no cost shown and no confirm step. It is a Sonnet 4.6
+    web-search loop: the one live run (California, 2026-09-13) made 9 searches
+    in 46s. There is no `COST_HINTS` entry for it; measure its token cost from
+    `api_usage` and add one.
+  - `components/prospect/RebuildBriefButton.tsx` has a confirm step ("Confirm
+    refresh?") but shows no price, although it re-runs full research (~$0.40–$0.65).
+    `COST_HINTS.refresh` already exists and is imported nowhere — this button is
+    its natural consumer.
+  Follow the `FindDecisionMakersButton` pattern, which does show its hint.
+
 - [ ] **Web search cost is not in the ledger (cost under-reported)** — Anthropic
   bills the server-side web search tool at **$10 per 1,000 searches**, on top of
   tokens. The SDK reports the count as `usage.server_tool_use.web_search_requests`

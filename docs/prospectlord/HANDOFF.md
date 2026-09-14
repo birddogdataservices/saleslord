@@ -1,6 +1,80 @@
 # ProspectLord — Handoff
 
-## Current version: v1.8.1 — SDK 0.125, measured per stage
+## Current version: v1.9.0 — search routes on the shared loop
+
+---
+
+## Session 15 (2026-09-11 → 13) — the three search routes run on `runSearchLoop`
+
+The top-priority item from Session 14. Four commits, one variable each.
+
+### What shipped
+
+1. **`refactor(search)` — the routes call the shared loop.** `research`,
+   `decision-makers` and `check-updates` each inlined a copy of the `pause_turn`
+   loop. All three now call `runSearchLoop` with their own parameters verbatim
+   (6/4/4 continuations, their own deadlines, `max_tokens` 4096/4096/1024), so the
+   request body sent to Anthropic is byte-identical to before. `research` keeps its
+   own try/catch, so a first-call failure is still a 504 with "your existing brief
+   is unchanged". `decision-makers` and `check-updates` gain the
+   continuation-failure handling research already had — a timeout on continuation 2
+   used to throw away the searches already paid for.
+2. **`fix(search)` — every route composes findings from every turn.** Two routes
+   read only the final assistant turn, which silently discarded earlier findings
+   whenever a run was cut short. `findingsFromFinalTurn` is deleted. At zero
+   continuations the two compositions are byte-identical (now asserted by a test),
+   which is why this change needed no measured run of its own.
+3. **`feat(search)` — telemetry.** Each route logs
+   `[route] search loop: N continuation(s), M web search(es) (~$X not in api_usage)`.
+4. **`fix(costs)` — recalibrated `COST_HINTS`.** Research and decision makers now
+   quote `$0.40–$0.65`. Decision makers had been quoted `$0.10–$0.25` — about half
+   its measured token cost alone, before any search charges.
+
+### Measured — live routes, not the harness
+
+| route (California) | code | env | time | cost (api_usage) |
+|---|---|---|---|---|
+| research | new | localhost | 2:34 | $0.42 |
+| decision-makers | old | **production** | 1:43 | $0.30 |
+| decision-makers | new | localhost | 2:49 | $0.33 |
+| check-updates | new | localhost | 46s | not recorded |
+
+A full California brief on the new code is **$0.75**, against the 2026-09-11
+baseline band of **$0.72–$0.76**. The one controlled comparison — decision makers,
+same prospect, same stored brief, old code vs new — moved +10%, inside the 12%
+spread the baseline's own two stage-2 runs showed. Localhost wall times are not
+comparable to the harness baseline: `next dev` on Turbopack, `proxy.ts` on every
+request, and Supabase round trips the harness never makes.
+
+check-updates logged **0 continuations and 9 web searches**. No live run has ever
+reached `pause_turn`; every real brief now adds evidence for free instead of
+costing ~$0.75 to hunt for.
+
+### Hard-won lessons
+
+1. **The A/B harness does not execute route handlers.** `scripts/ab-research.ts`
+   imports `runSearchLoop`, the prompts and `generateStructured` and reimplements
+   each stage. It cannot catch a route-wiring failure, and a harness run after a
+   route-only change reproduces the baseline by construction. Route changes need a
+   live run through the app.
+2. **`api_usage` under-reports every search route.** Web search is billed at $10
+   per 1,000 searches on top of tokens, and nothing read
+   `usage.server_tool_use.web_search_requests`. The token pricing and cache
+   multipliers were audited against published rates and are correct — the total is
+   incomplete. Now logged, not yet billed; see BACKLOG.md.
+3. **Local Google sign-in needed `http://localhost:3000/**` in Supabase →
+   Authentication → URL Configuration → Redirect URLs.** Without it Supabase
+   silently fell back to Site URL and bounced sign-in to production. Fixed in the
+   dashboard. The magic link still always lands on production — see priorities.
+4. **`next build` leaves production output in `apps/web/.next`, and a later
+   `next dev` then 404s on page routes** (`/login`, `/auth/callback`) while
+   `proxy.ts` keeps redirecting to them. Clear `.next` after any build before
+   starting dev.
+5. **Check which browser and which origin a run actually hit.** The in-app Browser
+   pane and Chrome keep separate cookies, and a production tab will happily run a
+   brief against the shared Supabase project. Stage 2 went to production once by
+   accident. Confirm `POST /api/<route>` appears in the dev log before trusting a
+   number.
 
 ---
 
@@ -236,16 +310,24 @@ both create-brief and find-decision-makers.
 
 ## Top priority for the next session
 
-### 1. Migrate the routes onto `runSearchLoop`
+### 1. Close the cost-accuracy gaps Session 15 found
 
-`research`, `decision-makers` and `check-updates` each inline their own copy of
-the continuation loop, with differences that are bugs rather than intent (see the
-findings-accumulation item in the backlog). `lib/web-search.ts` now exports the
-shared, tested version; only the harness uses it.
-
-Moving the three routes onto it deletes the duplication, fixes the accumulation
-split, and puts tested code on the production path. It touches the AI path, so:
-one change, then a harness run against the 2026-09-11 baseline before merging.
+- **Record web searches in `api_usage`** — a column, `calculateCost` takes the
+  count, `logUsage` threads it through. Read real counts off the new log lines
+  first. The plan is in BACKLOG.md.
+- **Price the two unpriced generative buttons** — Check for Updates and Refresh
+  company. BACKLOG.md.
+- **Magic-link redirect** — `app/api/auth/magic-link/route.ts` builds
+  `emailRedirectTo` from `NEXT_PUBLIC_APP_URL`, so local magic-link sign-in always
+  lands on production. Derive the origin from the request, but check it against an
+  allowlist: trusting a spoofed `Host` header would send a live auth code to
+  someone else's domain. The two admin-invite call sites should stay on
+  `NEXT_PUBLIC_APP_URL` — an invite belongs on production.
+- Re-check `COST_HINTS` once the first research and decision-makers search counts
+  appear in the logs.
+- Separately queued: the purchasing-power metric that replaces the fixed revenue
+  stat. Prompt + schema change on the AI path — own branch, own measured run.
+  BACKLOG.md.
 
 ### 2. Then the model evaluation
 

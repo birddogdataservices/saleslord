@@ -243,7 +243,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   // web searches: billed at $10 per 1,000 ON TOP of the tokens api_usage records,
   // so this is the size of the gap in the ledger. Not stored yet — closing it
   // needs an api_usage column. See docs/prospectlord/BACKLOG.md.
-  console.log(`[check-updates] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (~${(webSearchRequests * 0.01).toFixed(2)} not in api_usage)`)
+  console.log(`[check-updates] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (~$${(webSearchRequests * 0.01).toFixed(2)} not in api_usage)`)
 
   // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop can't also be forced to emit a tool, so this dedicated call
