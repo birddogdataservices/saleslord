@@ -12,20 +12,31 @@ Items are roughly priority-ordered within each section.
 
 ## 🟡 Should have (product is awkward without these)
 
-- [ ] **Two generative buttons state no cost (product-principle violation)** —
-  root `CLAUDE.md` requires every generative action to state its cost before the
-  rep commits, because they are spending their own Anthropic key. Found in
-  Session 15:
-  - `components/prospect/CheckUpdatesButton.tsx` fires `POST /api/check-updates`
-    on a single click — no cost shown and no confirm step. It is a Sonnet 4.6
-    web-search loop: the one live run (California, 2026-09-13) made 9 searches
-    in 44s, costing $0.26 in tokens plus ~$0.09 in searches (~$0.35 real). There
-    is no `COST_HINTS` entry for it yet — `roughly $0.30–$0.50` would cover it.
-  - `components/prospect/RebuildBriefButton.tsx` has a confirm step ("Confirm
-    refresh?") but shows no price, although it re-runs full research (~$0.40–$0.65).
-    `COST_HINTS.refresh` already exists and is imported nowhere — this button is
-    its natural consumer.
-  Follow the `FindDecisionMakersButton` pattern, which does show its hint.
+- [x] **Check for Updates and Refresh company now state their cost** — done
+  2026-09-14. Root `CLAUDE.md` requires every generative action to state its cost
+  before the rep commits. Both are topbar buttons with no room for a caption, so
+  both take two clicks and the confirm step floats the price beneath the button
+  (`components/prospect/CostConfirmHint.tsx` — non-interactive, so it cannot take
+  focus and cancel the confirm it describes). Blur and Escape cancel.
+  - Check for Updates used to fire on a single click. New
+    `COST_HINTS.checkUpdates`: roughly $0.30–$0.50 (one measured run: $0.26 in
+    tokens + 9 searches, ~$0.35 real).
+  - Refresh company already asked "Confirm refresh?" but never said what that
+    cost. It now shows `COST_HINTS.refresh`, which existed and was imported
+    nowhere.
+
+- [ ] **Find Decision Makers' small Refresh / Search again buttons state no cost**
+  — the same violation, found while fixing the two above. `FindDecisionMakersButton`
+  shows `COST_HINTS.decisionMakers` only on the prominent first-run `invite`
+  variant. The `refresh` and `retry` variants in the section header spend
+  ~$0.40–$0.65 on a single click with no price and no confirm. Same fix: a
+  two-step confirm with `CostConfirmHint`.
+
+- [ ] **Cost hints and several topbar labels are English-only** — the app ships six
+  locales, but `COST_HINTS` are plain strings in `lib/costs.ts` rather than entries
+  in `messages/*.json`, so a rep on de / es / fr / pt-BR reads every price in
+  English. `CheckUpdatesButton` and `RebuildBriefButton` hardcode their labels and
+  toasts too. Pre-existing; noticed while adding the confirm steps.
 
 - [x] **Web search cost in the ledger** — done 2026-09-14. Anthropic bills the
   server-side web search tool at **$10 per 1,000 searches** on top of tokens, and

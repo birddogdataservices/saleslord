@@ -33,14 +33,21 @@ export const COST_HINTS = {
   // Sonnet 4.6 single call, email only — no web search
   refreshEmail: 'roughly $0.01–$0.02 from your Anthropic key',
 
-  // Same route and cost as research. Not yet shown anywhere — RebuildBriefButton
-  // is its natural home; see the backlog item on unpriced generative buttons.
+  // Same route and cost as research. Shown by RebuildBriefButton ("Refresh
+  // company") in its confirm step, before the rep commits.
   refresh: 'roughly $0.40–$0.65 from your Anthropic key',
 
   // Sonnet 4.6 search loop grounded on the stage 1 brief + emit call. Measured
   // token cost is about the same as research — it reads a large cached prefix
   // and searches just as hard.
   decisionMakers: 'roughly $0.40–$0.65 from your Anthropic key',
+
+  // Sonnet 4.6 search loop scoped to "what changed since the last check", plus
+  // the emit call. One measured run (California, 2026-09-13): $0.26 in tokens
+  // plus 9 searches ($0.09), ~$0.35 real. A prospect with heavy news coverage
+  // searches more, so the top of the range leaves room. Shown by
+  // CheckUpdatesButton in its confirm step.
+  checkUpdates: 'roughly $0.30–$0.50 from your Anthropic key',
 
   // Sonnet 4.6 single call, note history + brief context
   followUp: 'roughly $0.02–$0.06 from your Anthropic key',

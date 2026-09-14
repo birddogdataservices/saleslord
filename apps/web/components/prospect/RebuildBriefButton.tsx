@@ -3,7 +3,10 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { COST_HINTS } from '@/lib/costs'
 import { LONG_ACTION_TOAST_MS } from '@/lib/utils'
+import { useEscapeKey } from '@/lib/use-escape-key'
+import CostConfirmHint from './CostConfirmHint'
 
 type Props = {
   query: string
@@ -12,9 +15,15 @@ type Props = {
 // Stage 1 refresh only. Re-runs company research and the fit verdict; decision
 // makers are deliberately left alone, so a rep can refresh company facts without
 // paying to re-discover people. The decision-makers panel has its own refresh.
+//
+// Two clicks, and the confirm step states the price. This is a full research run
+// on the rep's own Anthropic key; it used to ask "Confirm refresh?" without ever
+// saying what confirming would cost.
 export default function RebuildBriefButton({ query }: Props) {
   const router = useRouter()
   const [state, setState] = useState<'idle' | 'confirm' | 'loading'>('idle')
+
+  useEscapeKey(() => setState('idle'), state === 'confirm')
 
   async function handleClick() {
     if (state === 'idle') { setState('confirm'); return }
@@ -49,18 +58,21 @@ export default function RebuildBriefButton({ query }: Props) {
   }
 
   return (
-    <button
-      onClick={handleClick}
-      onBlur={() => { if (state === 'confirm') setState('idle') }}
-      disabled={state === 'loading'}
-      className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
-      style={{
-        border: '1px solid var(--sl-border)',
-        background: state === 'confirm' ? 'var(--sl-amber-bg)' : 'var(--sl-surface)',
-        color:      state === 'confirm' ? 'var(--sl-amber-t)' : 'var(--sl-text3)',
-      }}
-    >
-      {state === 'loading' ? 'Refreshing…' : state === 'confirm' ? 'Confirm refresh?' : 'Refresh company'}
-    </button>
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        onBlur={() => { if (state === 'confirm') setState('idle') }}
+        disabled={state === 'loading'}
+        className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
+        style={{
+          border: '1px solid var(--sl-border)',
+          background: state === 'confirm' ? 'var(--sl-amber-bg)' : 'var(--sl-surface)',
+          color:      state === 'confirm' ? 'var(--sl-amber-t)' : 'var(--sl-text3)',
+        }}
+      >
+        {state === 'loading' ? 'Refreshing…' : state === 'confirm' ? 'Confirm refresh?' : 'Refresh company'}
+      </button>
+      <CostConfirmHint text={COST_HINTS.refresh} show={state === 'confirm'} />
+    </div>
   )
 }
