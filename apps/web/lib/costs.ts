@@ -13,8 +13,9 @@
 //
 //   tokens    — measured. Stage 1 $0.32–$0.42, stage 2 $0.30–$0.44, across the
 //               2026-09-11 Massachusetts baseline and the 2026-09-12 California
-//               runs. These are what api_usage records.
-//   searches  — billed at $10 per 1,000 ON TOP of tokens, and NOT in api_usage.
+//               runs. Until 2026-09-14 these were all api_usage recorded.
+//   searches  — billed at $10 per 1,000 ON TOP of tokens. Since 2026-09-14,
+//               recorded in api_usage.web_search_requests and priced into cost_usd.
 //               Only one live count exists so far: check-updates on California
 //               made 9 searches. Research and decision makers are broader, so
 //               10–20 (~$0.10–$0.20) is assumed until the "[route] search loop"
@@ -22,8 +23,8 @@
 //
 // The previous figures ($0.10–$0.40 research, $0.10–$0.25 decision makers)
 // predated both measurements and quoted decision makers at about half its real
-// token cost alone. Revisit these once search counts are in, and again once the
-// api_usage ledger records searches — see docs/prospectlord/BACKLOG.md.
+// token cost alone. Revisit these once real search counts are in — both
+// api_usage.web_search_requests and the "[route] search loop" log lines carry them.
 
 export const COST_HINTS = {
   // Sonnet 4.6 search loop (company, news, fit) + emit call

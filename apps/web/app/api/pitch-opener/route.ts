@@ -161,6 +161,7 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}`
     model:        MODEL,
     inputTokens,
     outputTokens,
+    webSearchRequests: 0,  // no web search tool on this route
   })
 
   return Response.json({ paragraph, cost_usd: cost })

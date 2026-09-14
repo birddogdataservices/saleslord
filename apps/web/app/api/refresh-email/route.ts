@@ -157,6 +157,7 @@ Tech signals: ${(brief.tech_signals ?? []).join(', ') || 'none'}${latestUpdateCo
     model:        MODEL,
     inputTokens,
     outputTokens,
+    webSearchRequests: 0,  // no web search tool on this route
   })
 
   return Response.json({ email, cost_usd: cost })

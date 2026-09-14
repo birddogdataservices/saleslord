@@ -153,6 +153,13 @@ gap is test design rather than model capability.
 **This is the number to compare against.** Post-split, per stage, on the prompt
 and search tool that ship at v1.8.0.
 
+> **These costs are token-only.** Web search is billed separately at $10 per
+> 1,000 searches, and before 2026-09-14 neither `api_usage` nor the harness
+> counted it. Since then the harness reports `costUsd` as tokens + searches and
+> keeps `tokenCostUsd` alongside it. **Compare new runs against this table using
+> `tokenCostUsd`**, or every run will look like a 25–35% regression that is
+> really just the searches finally being counted.
+
 Prospect: "State of Massachusetts". `claude-sonnet-4-6`, `web_search_20250305`,
 model defaults (no `thinking`, no `effort`). Two runs per side.
 

@@ -126,11 +126,9 @@ type AnthropicUsage = {
   cache_read_input_tokens?: number | null
   cache_creation_input_tokens?: number | null
   // Server-side tool calls. web_search_requests is BILLED SEPARATELY from
-  // tokens — $10 per 1,000 searches — and api_usage does not record it, so the
-  // ledger under-reports every search route. Surfaced here so the routes can
-  // log the real count while that gap is measured; see docs/prospectlord/
-  // BACKLOG.md. One search = one use regardless of results; errored searches
-  // are not billed.
+  // tokens — $10 per 1,000 searches. Routes sum it through onUsage and pass it
+  // to logUsage, which records it in api_usage.web_search_requests and prices
+  // it into cost_usd. One search is one use regardless of results.
   server_tool_use?: { web_search_requests?: number | null } | null
 }
 

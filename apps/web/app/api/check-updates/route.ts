@@ -17,6 +17,7 @@ import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import { generateStructured } from '@/lib/structured-output'
+import { WEB_SEARCH_COST_PER_REQUEST } from '@/lib/utils'
 import type { ProductPromptContext, NewsItem } from '@/lib/types'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -240,10 +241,9 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   // been exercised by a live run. Logging it turns every real brief into evidence,
   // instead of spending ~$0.75 a time hunting for a prospect heavy enough to
   // trigger it.
-  // web searches: billed at $10 per 1,000 ON TOP of the tokens api_usage records,
-  // so this is the size of the gap in the ledger. Not stored yet — closing it
-  // needs an api_usage column. See docs/prospectlord/BACKLOG.md.
-  console.log(`[check-updates] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (~$${(webSearchRequests * 0.01).toFixed(2)} not in api_usage)`)
+  // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
+  // api_usage.web_search_requests and priced into cost_usd by logUsage below.
+  console.log(`[check-updates] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd)`)
 
   // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop can't also be forced to emit a tool, so this dedicated call
@@ -284,6 +284,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     outputTokens: totalOutputTokens,
     cacheReadTokens,
     cacheWriteTokens,
+    webSearchRequests,
   })
 
   // 10. If no relevant updates, return early — no blurb written. Still stamp

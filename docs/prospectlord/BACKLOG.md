@@ -27,31 +27,39 @@ Items are roughly priority-ordered within each section.
     its natural consumer.
   Follow the `FindDecisionMakersButton` pattern, which does show its hint.
 
-- [ ] **Web search cost is not in the ledger (cost under-reported)** — Anthropic
-  bills the server-side web search tool at **$10 per 1,000 searches**, on top of
-  tokens. The SDK reports the count as `usage.server_tool_use.web_search_requests`
-  (confirmed present in 0.125), and nothing in the codebase reads it, so
-  `api_usage` records only the token half of the bill for research,
-  decision-makers and check-updates — the three search-heaviest routes.
+- [x] **Web search cost in the ledger** — done 2026-09-14. Anthropic bills the
+  server-side web search tool at **$10 per 1,000 searches** on top of tokens, and
+  until this change `api_usage` recorded only tokens, so research, decision-makers
+  and check-updates all under-reported. One measured run (check-updates,
+  California) recorded $0.26 against a real ~$0.35.
 
-  This matters more here than it would elsewhere: BYOK means the rep is spending
-  their own card, `lib/costs.ts` quotes them a price before they commit, and the
-  number they are shown is systematically LOW. At 10–30 searches a stage that is
-  $0.10–$0.30 per stage unaccounted, so a "$0.75" brief may really be $0.95+.
+  What shipped:
+  - `api_usage.web_search_requests integer` — **nullable on purpose**: NULL means
+    "not recorded" (every earlier row, and CELord's direct inserts). Migration
+    `packages/db/migrations/2026-09-14_api_usage_web_search_requests.sql`.
+  - `WEB_SEARCH_COST_PER_REQUEST` next to `PRICING` in `lib/utils.ts`;
+    `calculateCost` takes the count (defaults to 0 so CELord's token-only calls
+    are unchanged).
+  - `logUsage` **requires** `webSearchRequests`, so a new search route that forgets
+    it is a type error, not a silently low bill. Non-search routes pass `0`.
+  - `logUsage` now logs a failed insert instead of swallowing it — a lost row also
+    dropped out of `checkDailyLimit`.
+  - The A/B harness reports cost as tokens + searches and keeps a token-only
+    figure, so runs stay comparable to pre-2026-09-14 baselines.
+  - Tests: `lib/utils.test.ts` (pricing) and `lib/api-usage.test.ts` (the row written).
 
-  **Session 15 added logging, not billing** — each route now logs its search
-  count, so the real magnitude can be read off production runs before the ledger
-  changes. Once there are numbers:
-  1. `api_usage` needs a `web_search_requests int not null default 0` column
-     (migration) — the count is worth storing raw, not just folded into
-     `cost_usd`, so historical rows stay re-pricable if the rate changes.
-  2. `calculateCost` in `lib/utils.ts` takes the count and adds
-     `searches * 0.01`. Keep it a named constant next to `PRICING`.
-  3. `logUsage` threads it through; `lib/costs.ts` estimates get revisited.
+  Still open:
+  - **CELord's web search is unrecorded.** `packages/signals/src/enrichment.ts` can
+    run web search, and `app/api/celord/enrich` / `celord/admin/trigger` insert
+    into `api_usage` directly with token-only `calculateCost`. It is CELord's code,
+    so it was left for a CELord change: pass the count and write the column.
+  - Historical `cost_usd` stays token-only — there are no counts to backfill from.
+  - Re-check `COST_HINTS` once research and decision-makers search counts appear
+    in the logs.
 
-  Related latent trap found in the same audit: `CACHE_WRITE_MULTIPLIER` is 1.25x,
-  correct for the 5-minute ephemeral cache in use. The **1-hour** cache write is
-  **2x**. If anyone ever sets `ttl: '1h'`, that multiplier is silently wrong.
+  Related latent trap: `CACHE_WRITE_MULTIPLIER` is 1.25x, correct for the 5-minute
+  cache in use. The **1-hour** cache write is **2x** — if anyone sets `ttl: '1h'`,
+  that multiplier is silently wrong. Now noted in `lib/utils.ts`.
 
 - [x] Check for Updates — `POST /api/check-updates`, append-only blurb history, `UpdateBlurbs` component, `CheckUpdatesButton` in topbar
 - [x] **Decision maker targeting tiers** — `targeting_tier` + `tier_reasoning` on `decision_makers`; `team_config` singleton for shared seniority bands + target functions; chip UI in setup page (admin-edit, all reps read); research prompt tiers each DM; cards sort prime_target → intel_only → low_signal; single flat list, no sections. **Updated 2026-09-08:** tier badge + `tier_reasoning` now render on each card, on screen and in the exported PDF — the tiers were computed and stored but invisible, so a rep could not tell which names were worth approaching or why. Sorting alone did not communicate it.

@@ -53,7 +53,7 @@ import {
   RESEARCH_DEADLINE_MS, DECISION_MAKERS_DEADLINE_MS,
   runSearchLoop, findingsFromAllTurns,
 } from '../lib/web-search'
-import { calculateCost } from '../lib/utils'
+import { calculateCost, WEB_SEARCH_COST_PER_REQUEST } from '../lib/utils'
 import type { ProductPromptContext } from '../lib/types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,6 +122,7 @@ type Usage = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  webSearchRequests: number   // usage.server_tool_use.web_search_requests — billed per search, on top of tokens
 }
 
 type StageResult = Usage & {
@@ -130,9 +131,11 @@ type StageResult = Usage & {
   ok: boolean
   error?: string
   elapsedMs: number
-  searchCalls: number       // 1 + continuations
+  searchCalls: number       // API calls in the search loop: 1 + continuations
   continuations: number
-  costUsd: number
+  costUsd: number           // tokenCostUsd + searchCostUsd — what the run actually bills
+  tokenCostUsd: number      // tokens only — comparable to baselines recorded before search was billed
+  searchCostUsd: number     // webSearchRequests × WEB_SEARCH_COST_PER_REQUEST
   shape: Record<string, unknown>
   value: unknown
 }
@@ -144,26 +147,30 @@ type RunResult = {
   stages: StageResult[]
   totalElapsedMs: number
   totalCostUsd: number
+  totalTokenCostUsd: number
+  totalSearchCostUsd: number
   ok: boolean
 }
 
 function newUsage(): Usage {
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, webSearchRequests: 0 }
 }
 
 // Structural, not Anthropic.Usage — that type grew several fields across the
 // 0.81 → 0.125 upgrade (cache_creation, inference_geo, service_tier, …) and this
-// only ever reads four of them.
+// only ever reads five of them.
 function addMessageUsage(acc: Usage, u: {
   input_tokens: number
   output_tokens: number
   cache_read_input_tokens?: number | null
   cache_creation_input_tokens?: number | null
+  server_tool_use?: { web_search_requests?: number | null } | null
 }) {
-  acc.inputTokens      += u.input_tokens
-  acc.outputTokens     += u.output_tokens
-  acc.cacheReadTokens  += u.cache_read_input_tokens ?? 0
-  acc.cacheWriteTokens += u.cache_creation_input_tokens ?? 0
+  acc.inputTokens       += u.input_tokens
+  acc.outputTokens      += u.output_tokens
+  acc.cacheReadTokens   += u.cache_read_input_tokens ?? 0
+  acc.cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+  acc.webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
 }
 
 function addStructuredUsage(acc: Usage, s: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }) {
@@ -171,6 +178,16 @@ function addStructuredUsage(acc: Usage, s: { inputTokens: number; outputTokens: 
   acc.outputTokens     += s.outputTokens
   acc.cacheReadTokens  += s.cacheReadTokens
   acc.cacheWriteTokens += s.cacheWriteTokens
+}
+
+// Split, because harness runs have to stay comparable to baselines recorded
+// before search was billed (2026-09-11 and earlier are token-only), while costUsd
+// has to match what production now writes to api_usage. The emit call does no
+// searching, so addStructuredUsage never touches webSearchRequests.
+function stageCost(model: string, u: Usage) {
+  const tokenCostUsd  = calculateCost(model, u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens)
+  const searchCostUsd = u.webSearchRequests * WEB_SEARCH_COST_PER_REQUEST
+  return { tokenCostUsd, searchCostUsd, costUsd: tokenCostUsd + searchCostUsd }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,7 +300,7 @@ async function runStage1(client: Anthropic, cfg: Config, ctx: RepContext, query:
       ...base, ...usage, ok: true,
       elapsedMs: Date.now() - startedAt,
       continuations, searchCalls: continuations + 1,
-      costUsd: calculateCost(cfg.model, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens),
+      ...stageCost(cfg.model, usage),
       shape: briefShape(structured.value),
       value: structured.value,
     }
@@ -292,7 +309,7 @@ async function runStage1(client: Anthropic, cfg: Config, ctx: RepContext, query:
       ...base, ...usage, ok: false,
       error: err instanceof Error ? err.message : String(err),
       elapsedMs: Date.now() - startedAt,
-      costUsd: calculateCost(cfg.model, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens),
+      ...stageCost(cfg.model, usage),
       shape: {}, value: null,
     }
   }
@@ -379,7 +396,7 @@ async function runStage2(client: Anthropic, cfg: Config, ctx: RepContext, g: Gro
       ...base, ...usage, ok: true,
       elapsedMs: Date.now() - startedAt,
       continuations, searchCalls: continuations + 1,
-      costUsd: calculateCost(cfg.model, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens),
+      ...stageCost(cfg.model, usage),
       shape: decisionMakerShape(dms),
       value: structured.value,
     }
@@ -388,7 +405,7 @@ async function runStage2(client: Anthropic, cfg: Config, ctx: RepContext, g: Gro
       ...base, ...usage, ok: false,
       error: err instanceof Error ? err.message : String(err),
       elapsedMs: Date.now() - startedAt,
-      costUsd: calculateCost(cfg.model, usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens),
+      ...stageCost(cfg.model, usage),
       shape: {}, value: null,
     }
   }
@@ -554,7 +571,11 @@ async function main() {
   // prefix and searches just as hard. An earlier guess here had stage 2 at
   // $0.05–$0.20, which understated a run by roughly half; this figure is what
   // the rep sees before approving a spend, so it gets measured, not estimated.
-  const STAGE_COST = { 1: [0.25, 0.45], 2: [0.30, 0.55] } as const
+  // Since 2026-09-14 these include web search ($10 per 1,000, now part of costUsd).
+  // The token figures above are unchanged; the search allowance is ~$0.10–$0.20 a
+  // stage, extrapolated from one live count of 9 searches, and errs high so the
+  // estimate you approve before spending does not under-quote the run.
+  const STAGE_COST = { 1: [0.35, 0.65], 2: [0.35, 0.65] } as const
   const perRun = stages.reduce((acc, s) => [acc[0] + STAGE_COST[s as 1 | 2][0], acc[1] + STAGE_COST[s as 1 | 2][1]], [0, 0])
   const totalRuns = configs.length * repeat
 
@@ -597,7 +618,7 @@ async function main() {
         process.stdout.write(`  [${tag}] stage 1 research… `)
         const s1 = await runStage1(client, cfg, ctx, query.trim())
         runStages.push(s1)
-        console.log(s1.ok ? `${secs(s1.elapsedMs)} · ${usd(s1.costUsd)} · ${s1.searchCalls} search call(s)` : `FAILED — ${s1.error}`)
+        console.log(s1.ok ? `${secs(s1.elapsedMs)} · ${usd(s1.costUsd)} (${usd(s1.tokenCostUsd)} tokens + ${s1.webSearchRequests} searches) · ${s1.searchCalls} API call(s)` : `FAILED — ${s1.error}`)
         if (s1.ok) grounding = groundingFromParsedBrief(s1.value, query.trim())
       }
 
@@ -608,7 +629,7 @@ async function main() {
           process.stdout.write(`  [${tag}] stage 2 decision-makers… `)
           const s2 = await runStage2(client, cfg, ctx, grounding)
           runStages.push(s2)
-          console.log(s2.ok ? `${secs(s2.elapsedMs)} · ${usd(s2.costUsd)} · ${s2.searchCalls} search call(s)` : `FAILED — ${s2.error}`)
+          console.log(s2.ok ? `${secs(s2.elapsedMs)} · ${usd(s2.costUsd)} (${usd(s2.tokenCostUsd)} tokens + ${s2.webSearchRequests} searches) · ${s2.searchCalls} API call(s)` : `FAILED — ${s2.error}`)
         }
       }
 
@@ -619,6 +640,8 @@ async function main() {
         stages: runStages,
         totalElapsedMs: runStages.reduce((n, s) => n + s.elapsedMs, 0),
         totalCostUsd:   runStages.reduce((n, s) => n + s.costUsd, 0),
+        totalTokenCostUsd:  runStages.reduce((n, s) => n + s.tokenCostUsd, 0),
+        totalSearchCostUsd: runStages.reduce((n, s) => n + s.searchCostUsd, 0),
         ok: runStages.length > 0 && runStages.every(s => s.ok),
       }
       results.push(run)
@@ -627,25 +650,27 @@ async function main() {
   }
 
   // ── Summary: one row per stage, plus the run total ─────────────────────────
-  console.log('\n  ┌──────────────────────────────────────────────────────────────────────────────────┐')
-  console.log('  │ cfg │ stage           │  time │   in │  out │ cache rd │      cost │ srch │ ok │')
-  console.log('  ├──────────────────────────────────────────────────────────────────────────────────┤')
+  console.log('\n  ┌────────────────────────────────────────────────────────────────────────────────────────┐')
+  console.log('  │ cfg │ stage           │  time │   in │  out │ cache rd │ web │      cost │ call │ ok │')
+  console.log('  ├────────────────────────────────────────────────────────────────────────────────────────┤')
   for (const run of results) {
     for (const s of run.stages) {
       console.log(
         `  │ ${run.config.padEnd(3)} │ ${`${s.stage} ${s.label}`.padEnd(15)} │ ${secs(s.elapsedMs).padStart(5)} │ ` +
         `${String(s.inputTokens).padStart(4)} │ ${String(s.outputTokens).padStart(4)} │ ` +
-        `${String(s.cacheReadTokens).padStart(8)} │ ${usd(s.costUsd).padStart(9)} │ ${String(s.searchCalls).padStart(4)} │ ${s.ok ? ' ✓' : ' ✗'} │`
+        `${String(s.cacheReadTokens).padStart(8)} │ ${String(s.webSearchRequests).padStart(3)} │ ${usd(s.costUsd).padStart(9)} │ ${String(s.searchCalls).padStart(4)} │ ${s.ok ? ' ✓' : ' ✗'} │`
       )
     }
     if (run.stages.length > 1) {
       console.log(
         `  │ ${run.config.padEnd(3)} │ ${'TOTAL'.padEnd(15)} │ ${secs(run.totalElapsedMs).padStart(5)} │ ` +
-        `${'—'.padStart(4)} │ ${'—'.padStart(4)} │ ${'—'.padStart(8)} │ ${usd(run.totalCostUsd).padStart(9)} │ ${'—'.padStart(4)} │ ${run.ok ? ' ✓' : ' ✗'} │`
+        `${'—'.padStart(4)} │ ${'—'.padStart(4)} │ ${'—'.padStart(8)} │ ${String(run.stages.reduce((n, s) => n + s.webSearchRequests, 0)).padStart(3)} │ ${usd(run.totalCostUsd).padStart(9)} │ ${'—'.padStart(4)} │ ${run.ok ? ' ✓' : ' ✗'} │`
       )
     }
   }
-  console.log('  └──────────────────────────────────────────────────────────────────────────────────┘')
+  console.log('  └────────────────────────────────────────────────────────────────────────────────────────┘')
+  console.log('  cost includes web search at $10 per 1,000 (the "web" column). "call" is API calls in the search loop.')
+  console.log('  Baselines from 2026-09-11 and earlier are token-only — compare them against tokenCostUsd in the JSON.')
 
   // Shape counts — an obvious regression should be visible without opening JSON.
   console.log('')

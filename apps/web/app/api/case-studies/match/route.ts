@@ -170,6 +170,7 @@ Order matches by relevance_score descending. No markdown, no preamble.`
     model:        MODEL,
     inputTokens:  totalInput,
     outputTokens: totalOutput,
+    webSearchRequests: 0,  // no web search tool on this route
   })
 
   if (!parsed) {

@@ -96,6 +96,10 @@ export async function checkDailyLimit(
 // Writes the cost-ledger row and returns the computed cost so the route can
 // hand it back to the client. Call this after every Anthropic call — including
 // ones whose downstream parsing failed, since the compute was spent either way.
+//
+// The returned cost is what the rep sees. Routes return it as cost_usd, withJob
+// copies it onto the job row the sidebar shows, and the monthly badge sums
+// api_usage.cost_usd. Anything left out here is left out of all three.
 export async function logUsage(
   adminClient: SupabaseClient,
   args: {
@@ -109,6 +113,12 @@ export async function logUsage(
     // cache_creation_input_tokens. Omit on routes that don't cache.
     cacheReadTokens?: number
     cacheWriteTokens?: number
+    // usage.server_tool_use.web_search_requests, summed across every call in
+    // the run. REQUIRED — pass 0 explicitly on routes that do not search. Web
+    // search is billed per search on top of tokens, and until 2026-09-14 nothing
+    // recorded it, because nothing had to. Required makes a new search route
+    // that forgets it a type error instead of a silently low bill.
+    webSearchRequests: number
   },
 ): Promise<number> {
   const cacheRead  = args.cacheReadTokens  ?? 0
@@ -116,20 +126,35 @@ export async function logUsage(
 
   const cost = calculateCost(
     args.model, args.inputTokens, args.outputTokens, cacheRead, cacheWrite,
+    args.webSearchRequests,
   )
 
-  await adminClient.from('api_usage').insert({
-    user_id:       args.userId,
-    prospect_id:   args.prospectId ?? null,
-    endpoint:      args.endpoint,
-    model:         args.model,
+  const { error } = await adminClient.from('api_usage').insert({
+    user_id:             args.userId,
+    prospect_id:         args.prospectId ?? null,
+    endpoint:            args.endpoint,
+    model:               args.model,
     // Total input tokens processed, cached and uncached. api_usage has no
     // separate cache columns; cost_usd already prices each portion correctly,
     // so this column stays a volume figure rather than a billing one.
-    input_tokens:  args.inputTokens + cacheRead + cacheWrite,
-    output_tokens: args.outputTokens,
-    cost_usd:      cost,
+    input_tokens:        args.inputTokens + cacheRead + cacheWrite,
+    output_tokens:       args.outputTokens,
+    // Raw count, so rows stay re-pricable if the per-search rate changes.
+    web_search_requests: args.webSearchRequests,
+    cost_usd:            cost,
   })
+
+  // Surfaced, not thrown. The Anthropic call already happened and was paid for,
+  // so failing the rep's request now would lose the result as well as the row.
+  // But this insert used to fail silently, and a lost row is lost twice: from
+  // the ledger, and from checkDailyLimit, which counts these rows — a runaway
+  // guard that quietly stops counting. It must at least be visible.
+  if (error) {
+    console.error(
+      `[logUsage] api_usage insert failed for ${args.endpoint} — $${cost.toFixed(4)} NOT recorded:`,
+      error.message,
+    )
+  }
 
   return cost
 }

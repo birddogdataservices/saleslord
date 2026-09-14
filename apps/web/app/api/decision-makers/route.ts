@@ -21,7 +21,7 @@ import {
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import { generateStructured } from '@/lib/structured-output'
-import { ROLE_COLORS, ROLE_LABELS } from '@/lib/utils'
+import { ROLE_COLORS, ROLE_LABELS, WEB_SEARCH_COST_PER_REQUEST } from '@/lib/utils'
 import {
   loadProspectContext,
   getUserAnthropicKey,
@@ -134,10 +134,9 @@ async function run(request: Request): Promise<Response> {
   // been exercised by a live run. Logging it turns every real brief into evidence,
   // instead of spending ~$0.75 a time hunting for a prospect heavy enough to
   // trigger it.
-  // web searches: billed at $10 per 1,000 ON TOP of the tokens api_usage records,
-  // so this is the size of the gap in the ledger. Not stored yet — closing it
-  // needs an api_usage column. See docs/prospectlord/BACKLOG.md.
-  console.log(`[decision-makers] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (~$${(webSearchRequests * 0.01).toFixed(2)} not in api_usage)`)
+  // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
+  // api_usage.web_search_requests and priced into cost_usd by logUsage below.
+  console.log(`[decision-makers] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd)`)
 
   // 7. Emit as guaranteed-valid JSON via tool use (phase 2), same two-phase
   // pattern as research — the search call cannot also be forced to emit a tool.
@@ -228,6 +227,7 @@ async function run(request: Request): Promise<Response> {
     outputTokens: totalOutputTokens,
     cacheReadTokens,
     cacheWriteTokens,
+    webSearchRequests,
   })
 
   return Response.json({ decision_makers: rows, found: rows.length, cost_usd: cost })

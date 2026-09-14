@@ -201,6 +201,11 @@ create table api_usage (
   input_tokens  integer not null default 0,
   output_tokens integer not null default 0,
   cost_usd      numeric(10,6) not null default 0,
+  -- Web search is billed at $10 per 1,000 on top of tokens; cost_usd includes it.
+  -- NULL = not recorded: rows before 2026-09-14, and CELord rows inserted directly.
+  web_search_requests integer
+    constraint api_usage_web_search_requests_nonneg
+    check (web_search_requests is null or web_search_requests >= 0),
   created_at    timestamptz default now()
 );
 alter table api_usage enable row level security;

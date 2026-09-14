@@ -12,6 +12,7 @@ import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
 import { generateStructured } from '@/lib/structured-output'
+import { WEB_SEARCH_COST_PER_REQUEST } from '@/lib/utils'
 import type { CompanyStats, ProductPromptContext } from '@/lib/types'
 
 // The system prompt lives in lib/research-prompt.ts so the A/B harness in
@@ -156,10 +157,9 @@ async function run(request: Request): Promise<Response> {
   // been exercised by a live run. Logging it turns every real brief into evidence,
   // instead of spending ~$0.75 a time hunting for a prospect heavy enough to
   // trigger it.
-  // web searches: billed at $10 per 1,000 ON TOP of the tokens api_usage records,
-  // so this is the size of the gap in the ledger. Not stored yet — closing it
-  // needs an api_usage column. See docs/prospectlord/BACKLOG.md.
-  console.log(`[research] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (~$${(webSearchRequests * 0.01).toFixed(2)} not in api_usage)`)
+  // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
+  // api_usage.web_search_requests and priced into cost_usd by logUsage below.
+  console.log(`[research] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd)`)
 
   // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop above can't ALSO be forced to emit a tool (forcing it would
@@ -271,6 +271,7 @@ async function run(request: Request): Promise<Response> {
     outputTokens: totalOutputTokens,
     cacheReadTokens,
     cacheWriteTokens,
+    webSearchRequests,
   })
 
   // 10. Return

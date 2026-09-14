@@ -80,19 +80,37 @@ const FALLBACK_MODEL = 'claude-sonnet-4-6'
 
 // Prompt-caching multipliers against the model's base input rate. Writing a
 // 5-minute ephemeral cache entry costs a premium; reading one is nearly free.
+// These are the 5-MINUTE rates. A 1-hour cache write (cache_control ttl: '1h')
+// is 2x, not 1.25x — nothing uses one today, but if something starts to, this
+// multiplier is silently wrong for it.
 const CACHE_WRITE_MULTIPLIER = 1.25
 const CACHE_READ_MULTIPLIER  = 0.10
+
+// Server-side web search, billed per search ON TOP of tokens: $10 per 1,000.
+// Flat across models, so it lives outside PRICING. One search is one use no
+// matter how many results it returns, and searches that error are not billed —
+// if usage.server_tool_use.web_search_requests ever counts an errored search,
+// this over-reports slightly, which is the safe direction. Web fetch has no
+// per-request charge beyond tokens, so it has no rate here.
+export const WEB_SEARCH_COST_PER_REQUEST = 10 / 1000
 
 // inputTokens is the uncached input only — usage.input_tokens already excludes
 // whatever was served from or written to cache, so the three are added
 // separately at their own rates. Cache args default to 0, so uncached callers
 // are unaffected.
+//
+// webSearchRequests is usage.server_tool_use.web_search_requests summed across
+// every call in the run. It defaults to 0 here only so CELord's direct,
+// token-only calls keep compiling unchanged; ProspectLord routes reach this
+// through logUsage, where the count is required so a search route cannot
+// forget it again.
 export function calculateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
-  cacheReadTokens  = 0,
-  cacheWriteTokens = 0,
+  cacheReadTokens   = 0,
+  cacheWriteTokens  = 0,
+  webSearchRequests = 0,
 ): number {
   let prices = PRICING[normalizeModelId(model)]
   if (!prices) {
@@ -103,7 +121,8 @@ export function calculateCost(
     prices.input  * inputTokens +
     prices.output * outputTokens +
     prices.input  * CACHE_READ_MULTIPLIER  * cacheReadTokens +
-    prices.input  * CACHE_WRITE_MULTIPLIER * cacheWriteTokens
+    prices.input  * CACHE_WRITE_MULTIPLIER * cacheWriteTokens +
+    WEB_SEARCH_COST_PER_REQUEST * webSearchRequests
   )
 }
 

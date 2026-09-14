@@ -108,6 +108,7 @@ export async function POST(request: Request) {
     model:        MODEL,
     inputTokens:  response.usage.input_tokens,
     outputTokens: response.usage.output_tokens,
+    webSearchRequests: 0,  // no web search tool on this route
   })
 
   const textBlock = response.content.find(b => b.type === 'text')
