@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { ACTION_BUTTON_CLASS, ACTION_STYLE } from '@/lib/action-styles'
 
 type Props = {
   prospectId: string
@@ -10,6 +11,9 @@ type Props = {
   prospectName: string
 }
 
+// A free utility action, so it takes the neutral topbar style. Archiving is
+// reversible — the same button becomes Restore — so it is not styled as a
+// destructive action.
 export default function ArchiveButton({ prospectId, isArchived, prospectName }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -33,8 +37,8 @@ export default function ArchiveButton({ prospectId, isArchived, prospectName }: 
     <button
       onClick={toggle}
       disabled={loading}
-      className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
-      style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text3)' }}
+      className={ACTION_BUTTON_CLASS}
+      style={ACTION_STYLE.utility}
     >
       {loading ? '…' : isArchived ? 'Restore' : 'Archive'}
     </button>

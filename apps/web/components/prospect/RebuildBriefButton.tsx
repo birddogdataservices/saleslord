@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { COST_HINTS } from '@/lib/costs'
 import { LONG_ACTION_TOAST_MS } from '@/lib/utils'
+import { ACTION_BUTTON_CLASS, ACTION_STYLE } from '@/lib/action-styles'
 import { useEscapeKey } from '@/lib/use-escape-key'
 import CostConfirmHint from './CostConfirmHint'
 
@@ -63,12 +64,8 @@ export default function RebuildBriefButton({ query }: Props) {
         onClick={handleClick}
         onBlur={() => { if (state === 'confirm') setState('idle') }}
         disabled={state === 'loading'}
-        className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
-        style={{
-          border: '1px solid var(--sl-border)',
-          background: state === 'confirm' ? 'var(--sl-amber-bg)' : 'var(--sl-surface)',
-          color:      state === 'confirm' ? 'var(--sl-amber-t)' : 'var(--sl-text3)',
-        }}
+        className={ACTION_BUTTON_CLASS}
+        style={state === 'confirm' ? ACTION_STYLE.confirm : ACTION_STYLE.research}
       >
         {state === 'loading' ? 'Refreshing…' : state === 'confirm' ? 'Confirm refresh?' : 'Refresh company'}
       </button>

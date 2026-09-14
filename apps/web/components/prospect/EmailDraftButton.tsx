@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useEscapeKey } from '@/lib/use-escape-key'
+import { ACTION_BUTTON_CLASS, ACTION_STYLE } from '@/lib/action-styles'
 import { useTranslations, useFormatter } from 'next-intl'
 import { detectSlop } from '@/lib/slop'
 import { LANGUAGES, PROFILE_DEFAULT, isSupportedLocale } from '@/lib/i18n/languages'
@@ -93,8 +94,8 @@ export default function EmailDraftButton({ initialEmail, prospectId, products, o
           // rep's first open rather than making them press refresh on a blank modal.
           if (!email && !refreshing) handleRefresh()
         }}
-        className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium"
-        style={{ border: 'none', background: 'var(--sl-text)', color: '#F0EDE6' }}
+        className={ACTION_BUTTON_CLASS}
+        style={ACTION_STYLE.writing}
       >
         {t('draftEmail')}
       </button>

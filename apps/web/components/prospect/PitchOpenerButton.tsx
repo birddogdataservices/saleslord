@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useEscapeKey } from '@/lib/use-escape-key'
+import { ACTION_BUTTON_CLASS, ACTION_STYLE } from '@/lib/action-styles'
 import { useTranslations, useFormatter } from 'next-intl'
 import { detectSlop } from '@/lib/slop'
 import { LANGUAGES, PROFILE_DEFAULT, isSupportedLocale } from '@/lib/i18n/languages'
@@ -124,8 +125,8 @@ export default function PitchOpenerButton({ prospectId, products, dms, painSigna
       {/* Trigger button */}
       <button
         onClick={() => setOpen(true)}
-        className="text-[11px] px-3 py-[5px] rounded-[6px] cursor-pointer font-medium"
-        style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)' }}
+        className={ACTION_BUTTON_CLASS}
+        style={ACTION_STYLE.writing}
       >
         {t('trigger')}
       </button>

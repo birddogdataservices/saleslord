@@ -16,7 +16,14 @@ import UpdateBlurbs from '@/components/prospect/UpdateBlurbs'
 import ReresearchButton from '@/components/prospect/ReresearchButton'
 import ArchiveButton from '@/components/prospect/ArchiveButton'
 import RebuildBriefButton from '@/components/prospect/RebuildBriefButton'
+import { ACTION_BUTTON_CLASS, ACTION_STYLE } from '@/lib/action-styles'
 import type { ProspectBrief, DecisionMaker, ProspectNote, ProspectUpdate } from '@/lib/types'
+
+// Hairline between topbar action groups. aria-hidden: the grouping is visual,
+// and every button already says what it does.
+function TopbarDivider() {
+  return <span aria-hidden="true" className="w-px h-[18px] mx-1" style={{ background: 'var(--sl-border)' }} />
+}
 
 export default async function ProspectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -95,26 +102,35 @@ export default async function ProspectPage({ params }: { params: Promise<{ id: s
           )}
         </div>
 
+        {/* Grouped by what clicking does: free utilities, then research that
+            spends the rep's key and confirms first, then writing. The colours
+            for each group live in lib/action-styles.ts. */}
         <div className="ml-auto flex gap-[7px] items-center">
-          <RebuildBriefButton query={prospect.query} />
+          {brief && (
+            <a
+              href={`/api/export/pdf/${id}`}
+              download
+              className={ACTION_BUTTON_CLASS}
+              style={{ ...ACTION_STYLE.utility, textDecoration: 'none' }}
+            >
+              {t('exportPdf')}
+            </a>
+          )}
           <ArchiveButton
             prospectId={id}
             isArchived={!!prospect.archived_at}
             prospectName={prospect.name}
           />
-          {brief && (
-            <a
-              href={`/api/export/pdf/${id}`}
-              download
-              className="text-[11px] px-3 py-[5px] rounded-[6px] font-medium"
-              style={{ border: '1px solid var(--sl-border)', background: 'var(--sl-surface)', color: 'var(--sl-text)', textDecoration: 'none' }}
-            >
-              {t('exportPdf')}
-            </a>
-          )}
+
+          <TopbarDivider />
+
+          <RebuildBriefButton query={prospect.query} />
           {brief && (
             <CheckUpdatesButton prospectId={id} lastCheckedAt={prospect.last_checked_at} />
           )}
+
+          {brief && <TopbarDivider />}
+
           {brief && (
             <PitchOpenerButton
               prospectId={id}
