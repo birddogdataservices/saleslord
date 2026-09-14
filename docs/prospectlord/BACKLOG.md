@@ -19,8 +19,8 @@ Items are roughly priority-ordered within each section.
   - `components/prospect/CheckUpdatesButton.tsx` fires `POST /api/check-updates`
     on a single click — no cost shown and no confirm step. It is a Sonnet 4.6
     web-search loop: the one live run (California, 2026-09-13) made 9 searches
-    in 46s. There is no `COST_HINTS` entry for it; measure its token cost from
-    `api_usage` and add one.
+    in 44s, costing $0.26 in tokens plus ~$0.09 in searches (~$0.35 real). There
+    is no `COST_HINTS` entry for it yet — `roughly $0.30–$0.50` would cover it.
   - `components/prospect/RebuildBriefButton.tsx` has a confirm step ("Confirm
     refresh?") but shows no price, although it re-runs full research (~$0.40–$0.65).
     `COST_HINTS.refresh` already exists and is imported nowhere — this button is

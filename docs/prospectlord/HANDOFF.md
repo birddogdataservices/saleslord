@@ -37,7 +37,7 @@ The top-priority item from Session 14. Four commits, one variable each.
 | research | new | localhost | 2:34 | $0.42 |
 | decision-makers | old | **production** | 1:43 | $0.30 |
 | decision-makers | new | localhost | 2:49 | $0.33 |
-| check-updates | new | localhost | 46s | not recorded |
+| check-updates | new | localhost | 44s | $0.26 |
 
 A full California brief on the new code is **$0.75**, against the 2026-09-11
 baseline band of **$0.72–$0.76**. The one controlled comparison — decision makers,
@@ -46,7 +46,9 @@ spread the baseline's own two stage-2 runs showed. Localhost wall times are not
 comparable to the harness baseline: `next dev` on Turbopack, `proxy.ts` on every
 request, and Supabase round trips the harness never makes.
 
-check-updates logged **0 continuations and 9 web searches**. No live run has ever
+check-updates logged **0 continuations and 9 web searches** — $0.09 the ledger never
+saw on top of the $0.26 it did record, so the real charge was ~35% higher than
+`api_usage` shows. That is the first measured size of the web-search gap. No live run has ever
 reached `pause_turn`; every real brief now adds evidence for free instead of
 costing ~$0.75 to hunt for.
 
