@@ -159,6 +159,7 @@
     "searching": "Searching for decision makers…",
     "searchAgain": "Search again",
     "refresh": "Refresh",
+    "confirmRefresh": "Confirm refresh?",
     "failed": "Could not search for decision makers. Please try again.",
     "foundCount": "{count, plural, one {# decision maker found.} other {# decision makers found.}}",
     "noneTitle": "No named individuals found publicly.",

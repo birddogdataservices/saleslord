@@ -159,6 +159,7 @@
     "searching": "Suche nach Entscheidern…",
     "searchAgain": "Erneut suchen",
     "refresh": "Aktualisieren",
+    "confirmRefresh": "Aktualisierung bestätigen?",
     "failed": "Entscheider konnten nicht gesucht werden. Bitte erneut versuchen.",
     "foundCount": "{count, plural, one {# Entscheider gefunden.} other {# Entscheider gefunden.}}",
     "noneTitle": "Keine öffentlich benannten Personen gefunden.",

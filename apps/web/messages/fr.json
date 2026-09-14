@@ -159,6 +159,7 @@
     "searching": "Recherche de décideurs…",
     "searchAgain": "Relancer la recherche",
     "refresh": "Actualiser",
+    "confirmRefresh": "Confirmer l'actualisation ?",
     "failed": "Impossible de rechercher les décideurs. Veuillez réessayer.",
     "foundCount": "{count, plural, one {# décideur trouvé.} other {# décideurs trouvés.}}",
     "noneTitle": "Aucune personne identifiable publiquement.",

@@ -159,6 +159,7 @@
     "searching": "Buscando responsables…",
     "searchAgain": "Buscar de nuevo",
     "refresh": "Actualizar",
+    "confirmRefresh": "¿Confirmar actualización?",
     "failed": "No se pudo buscar responsables. Inténtalo de nuevo.",
     "foundCount": "{count, plural, one {# responsable encontrado.} other {# responsables encontrados.}}",
     "noneTitle": "No se encontraron personas identificables públicamente.",

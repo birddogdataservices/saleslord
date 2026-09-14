@@ -159,6 +159,7 @@
     "searching": "Buscando decisores…",
     "searchAgain": "Buscar novamente",
     "refresh": "Atualizar",
+    "confirmRefresh": "Confirmar atualização?",
     "failed": "Não foi possível buscar decisores. Tente novamente.",
     "foundCount": "{count, plural, one {# decisor encontrado.} other {# decisores encontrados.}}",
     "noneTitle": "Nenhuma pessoa identificável publicamente foi encontrada.",

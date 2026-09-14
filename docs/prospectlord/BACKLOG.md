@@ -25,12 +25,20 @@ Items are roughly priority-ordered within each section.
     cost. It now shows `COST_HINTS.refresh`, which existed and was imported
     nowhere.
 
-- [ ] **Find Decision Makers' small Refresh / Search again buttons state no cost**
-  — the same violation, found while fixing the two above. `FindDecisionMakersButton`
-  shows `COST_HINTS.decisionMakers` only on the prominent first-run `invite`
-  variant. The `refresh` and `retry` variants in the section header spend
-  ~$0.40–$0.65 on a single click with no price and no confirm. Same fix: a
-  two-step confirm with `CostConfirmHint`.
+- [x] **Find Decision Makers states its price wherever it can be clicked** — done
+  2026-09-14; the same violation, found while fixing the two topbar buttons. It
+  showed `COST_HINTS.decisionMakers` only on the first-run `invite` variant, while
+  `refresh` and `retry` spent ~$0.40–$0.65 on a single click with no price. Now:
+  - `invite` and `retry` sit in the card body, where there is room: the price is
+    a visible caption under the button (now `--sl-text2`, readable at 10px), and
+    one click runs it.
+  - `refresh` sits in the section header with no room for a caption, so it
+    confirms first and floats the price below (`CostConfirmHint`), like the topbar
+    research buttons. New i18n key `DecisionMakers.confirmRefresh` in all six
+    locales.
+  - The floating hint is deliberately NOT used for `retry`: it sits at the foot of
+    an `overflow-hidden` card and would be clipped.
+  All three use the blue research style from `lib/action-styles.ts`.
 
 - [ ] **Cost hints and several topbar labels are English-only** — the app ships six
   locales, but `COST_HINTS` are plain strings in `lib/costs.ts` rather than entries
