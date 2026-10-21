@@ -164,7 +164,7 @@ at the repo root — Next.js looks for it relative to the app directory.
 
 Semver tags on `main` at meaningful milestones. Tags are the source of truth.
 
-Current version: **v1.10.0** (web search billed in api_usage; research actions state their price; colour-coded prospect actions)
+Current version: **v1.10.1** (search calls stream and keep partial results at the deadline; failed runs logged to api_usage)
 
 Known gap: there is no v1.0.0 tag — the TerritoryLord session (documented as
 v1.0.0 in HANDOFF.md) was never tagged. Tags jump v0.9.0 → v1.1.0.

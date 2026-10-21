@@ -22,7 +22,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runSearchLoop, findingsFromAllTurns, type SearchLoopClient } from './web-search'
+import { runSearchLoop, findingsFromAllTurns, findingsForEmit, type SearchLoopClient } from './web-search'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stub client
@@ -34,26 +34,51 @@ function reply(stopReason: string, text: string) {
   return { stop_reason: stopReason, content: [{ type: 'text', text }], usage }
 }
 
+// A call still streaming when the deadline arrives. `snapshot` is what the
+// stream had accumulated — its finalMessage() never resolves on its own, only
+// rejects once the loop aborts it, exactly like the SDK's MessageStream.
+class Hang {
+  constructor(public snapshot: unknown) {}
+}
+
+// One completed search: the call, its result, and the model's note after it.
+function search(id: string, note?: string) {
+  return [
+    { type: 'server_tool_use', id, name: 'web_search', input: { query: `q ${id}` } },
+    { type: 'web_search_tool_result', tool_use_id: id, content: [{ type: 'web_search_result', title: `r ${id}`, url: `https://x/${id}` }] },
+    ...(note ? [{ type: 'text', text: note }] : []),
+  ]
+}
+
+const startUsage = { input_tokens: 7, output_tokens: 1 }
+
 // Returns the scripted replies in order. Anything past the end throws, which is
 // itself the assertion that the loop did not call more times than expected.
 //
 // Bodies are SNAPSHOT at call time, not stored by reference. The loop reuses one
 // `messages` array and mutates it between calls, so a stored reference would show
 // every call holding the final conversation. (Harmless in production — the SDK
-// serializes the body synchronously inside create() — but it makes "what was sent
+// serializes the body synchronously inside stream() — but it makes "what was sent
 // on call 1" unassertable unless copied here.)
 function stubClient(replies: unknown[]) {
   const bodies: any[] = []
   const client: SearchLoopClient = {
     messages: {
-      async create(body: any) {
+      stream(body: any) {
         bodies.push(structuredClone(body))
         if (bodies.length > replies.length) {
           throw new Error(`loop called ${bodies.length}x, only ${replies.length} replies scripted`)
         }
         const r = replies[bodies.length - 1]
-        if (r instanceof Error) throw r
-        return r
+        let abort = () => {}
+        const final = r instanceof Hang
+          ? new Promise((_, reject) => { abort = () => reject(new Error('Request was aborted.')) })
+          : r instanceof Error ? Promise.reject(r) : Promise.resolve(r)
+        return {
+          finalMessage: () => final,
+          abort: () => abort(),
+          currentMessage: r instanceof Hang ? r.snapshot : undefined,
+        }
       },
     },
   }
@@ -146,11 +171,13 @@ test('honours the wall-clock deadline even when continuations remain', async () 
     reply('pause_turn', 'a'),
     reply('pause_turn', 'b'),
   ])
+  // Each now() advances 100ms: start 100 (deadline 450), call 1 budgeted at
+  // 200, check at 300 passes, call 2 budgeted at 400, check at 500 fails.
   const r = await runSearchLoop({
     ...base, client,
     maxContinuations: 6,
-    deadlineMs: 150,
-    now: () => (clock += 100),   // 100ms per check: passes once, then over budget
+    deadlineMs: 350,
+    now: () => (clock += 100),
   })
 
   assert.equal(r.continuations, 1)
@@ -168,8 +195,126 @@ test('keeps findings gathered so far when a continuation throws', async () => {
   const r = await runSearchLoop({ ...base, client })
 
   assert.equal(r.continuations, 2)
-  assert.match(findingsFromAllTurns(r), /kept one/)
-  assert.match(findingsFromAllTurns(r), /kept two/)
+  // Exact, not a match: the last good turn is `final`, and must not also be
+  // left in `messages` where it would be composed twice.
+  assert.equal(findingsFromAllTurns(r), 'kept one\nkept two')
+  assert.equal(r.complete, false)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Streaming: cut short at the deadline
+// ─────────────────────────────────────────────────────────────────────────────
+// The Lockheed Martin failure, 2026-10-21: the first search call ran past the
+// old 120s non-streaming timeout and returned nothing, so every search it had
+// done was paid for and lost. These pin that a call cut short keeps them.
+
+test('a first call cut short at the deadline keeps the searches it completed', async () => {
+  const { client, bodies } = stubClient([
+    new Hang({
+      usage: startUsage,
+      content: [
+        { type: 'text', text: 'Researching Lockheed.' },
+        ...search('a', 'Found the 10-K.'),
+        ...search('b'),
+        // In flight when the deadline hit: a call with no result yet.
+        { type: 'server_tool_use', id: 'c', name: 'web_search', input: {} },
+      ],
+    }),
+  ])
+  const seen: any[] = []
+  const r = await runSearchLoop({ ...base, client, deadlineMs: 20, onUsage: u => seen.push(u) })
+
+  assert.equal(bodies.length, 1)
+  assert.equal(r.complete, false)
+  assert.equal(r.continuations, 0)
+  const types = r.final.content.map((b: any) => b.type)
+  assert.deepEqual(types, ['text', 'server_tool_use', 'web_search_tool_result', 'text', 'server_tool_use', 'web_search_tool_result'])
+  // Billed searches counted exactly; tokens are message_start's lower bound.
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].server_tool_use.web_search_requests, 2)
+  assert.equal(seen[0].input_tokens, 7)
+})
+
+test('a first call cut short with nothing usable still propagates', async () => {
+  const { client } = stubClient([
+    new Hang({ usage: startUsage, content: [{ type: 'server_tool_use', id: 'a', name: 'web_search', input: {} }] }),
+  ])
+  const seen: any[] = []
+  await assert.rejects(
+    () => runSearchLoop({ ...base, client, deadlineMs: 20, onUsage: u => seen.push(u) }),
+    /aborted/,
+  )
+  // Still reported: the call was billed even though it produced nothing.
+  assert.equal(seen.length, 1)
+})
+
+test('a continuation cut short keeps earlier turns and its own results, once each', async () => {
+  const { client } = stubClient([
+    reply('pause_turn', 'turn one'),
+    new Hang({ usage: startUsage, content: [...search('a', 'partial note')] }),
+  ])
+  const r = await runSearchLoop({ ...base, client, deadlineMs: 20 })
+
+  assert.equal(r.continuations, 1)
+  assert.equal(r.complete, false)
+  assert.equal(findingsFromAllTurns(r), 'turn one\npartial note')
+})
+
+test('a continuation cut short with nothing usable leaves the last good turn as final', async () => {
+  const { client } = stubClient([
+    reply('pause_turn', 'turn one'),
+    new Hang({ usage: startUsage, content: [] }),
+  ])
+  const r = await runSearchLoop({ ...base, client, deadlineMs: 20 })
+
+  assert.equal(findingsFromAllTurns(r), 'turn one')
+  assert.equal(r.complete, false)
+})
+
+test('a call that finishes before the deadline is complete and not cut', async () => {
+  const { client } = stubClient([reply('end_turn', 'done')])
+  const r = await runSearchLoop({ ...base, client, deadlineMs: 5_000 })
+  assert.equal(r.complete, true)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// What the emit call receives
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('a complete run hands the emit call its findings text, with no extra tools', async () => {
+  const { client } = stubClient([reply('end_turn', 'the write-up')])
+  const f = findingsForEmit(await runSearchLoop({ ...base, client }), 'FALLBACK')
+  assert.equal(f.content, 'the write-up')
+  assert.deepEqual(f.tools, [])
+})
+
+test('an incomplete run hands the emit call the raw search results, and declares web_search', async () => {
+  // The write-up never happened, so the text is just "Let me look" — composing
+  // from that alone would be a brief that looks normal and says nothing.
+  const { client } = stubClient([
+    new Hang({ usage: startUsage, content: [{ type: 'text', text: 'Let me look.' }, ...search('a'), { type: 'text', text: '' }] }),
+  ])
+  const f = findingsForEmit(await runSearchLoop({ ...base, client, deadlineMs: 20 }), 'FALLBACK')
+
+  assert.ok(Array.isArray(f.content))
+  const content = f.content as any[]
+  assert.ok(content.some(b => b.type === 'web_search_tool_result'))
+  // Empty text blocks are dropped — the API rejects them.
+  assert.ok(!content.some(b => b.type === 'text' && b.text === ''))
+  assert.equal((f.tools[0] as any).name, 'web_search')
+})
+
+test('an incomplete run stopped on pause_turn also hands over results from every turn', async () => {
+  const { client } = stubClient([
+    { stop_reason: 'pause_turn', content: [...search('a', 'one')], usage },
+    { stop_reason: 'pause_turn', content: [...search('b', 'two')], usage },
+  ])
+  const r = await runSearchLoop({ ...base, client, maxContinuations: 1 })
+  assert.equal(r.complete, false)
+
+  const content = findingsForEmit(r, 'FALLBACK').content as any[]
+  const results = content.filter(b => b.type === 'web_search_tool_result').map(b => b.tool_use_id)
+  assert.deepEqual(results, ['a', 'b'])
 })
 
 test('a failed FIRST call still propagates — there is nothing to salvage', async () => {

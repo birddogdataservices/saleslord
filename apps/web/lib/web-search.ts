@@ -37,20 +37,24 @@ export function webSearchTool() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Time budgets
 // ─────────────────────────────────────────────────────────────────────────────
-// Two independent guards, because they fail differently:
+// The search calls STREAM, and the route deadline is the one bound on them:
+// each call runs until the model finishes or the deadline arrives, whichever is
+// first. At the deadline the call is cut short and keeps every search result it
+// has already received — see runSearchLoop.
 //
-//   timeout   — caps ONE call. Stops a single slow call hanging the route.
-//   deadline  — caps the WHOLE route. Stops many acceptable calls adding up
-//               past the Vercel function limit.
-//
-// Neither alone is enough. Counting continuations bounds neither.
+// History: until 2026-10-21 the search calls were non-streaming with a 120s
+// per-call timeout. A non-streaming call that times out returns NOTHING, so a
+// heavy prospect (Lockheed Martin, twice) whose first call ran past 120s lost
+// every search it had paid for and failed with a 504. Before that, 90s with 1
+// retry failed at exactly 3:03 — 90s attempt + 90s retry + setup. A per-call
+// cap also never bounded the route: a continuation starting at 199s could run
+// another 120s past a 200s deadline.
 
-// Per-call ceiling for the search calls. The SDK default is 10 minutes, which
-// is far past any Vercel limit — a rep would just watch a spinner.
-//
-// History: 90s with 1 retry produced a production failure at exactly 3:03 —
-// 90s attempt + 90s retry + setup. The first search call does the bulk of the
-// work and crossed 90s on Vercel, which is slower than a laptop.
+// Client-level timeout. On a STREAMED call the SDK arms this around the fetch
+// only — it bounds the wait for response headers, not the stream — so for the
+// search calls it is a connection guard and the deadline does the real work.
+// On non-streamed calls it is the whole-call ceiling (generateStructured
+// overrides it with EMIT_TIMEOUT_MS). The SDK default is 10 minutes.
 export const ANTHROPIC_TIMEOUT_MS = 120_000
 
 // Zero retries, deliberately. The SDK retries timeouts, and retrying a call
@@ -64,12 +68,12 @@ export const ANTHROPIC_MAX_RETRIES = 0
 // lets the search budget stay generous without risking the ceiling.
 export const EMIT_TIMEOUT_MS = 60_000
 
-// Whole-route wall clock, checked between continuations. Each sits under its
-// route's vercel.json maxDuration with room for the emit call and the writes
-// that follow it.
+// Search-phase wall clock: no continuation starts past it, and a call still
+// streaming when it arrives is cut short. Each sits under its route's
+// vercel.json maxDuration with room for the emit call and the writes after it.
 //
-// Worst case for research: first call 120s, deadline stops continuations at
-// 200s, emit 60s → ~260s against a 300s limit.
+// Worst case for research: search phase ends at 200s, emit 60s → ~260s against
+// a 300s limit.
 export const RESEARCH_DEADLINE_MS = 200_000        // maxDuration 300s
 export const CHECK_UPDATES_DEADLINE_MS = 200_000   // maxDuration 300s
 export const DECISION_MAKERS_DEADLINE_MS = 150_000 // maxDuration 300s
@@ -90,6 +94,11 @@ export const DECISION_MAKERS_DEADLINE_MS = 150_000 // maxDuration 300s
 // Bounded by BOTH a continuation count and a wall clock, because counting
 // continuations does not bound time: a single call can run for minutes.
 //
+// Each call STREAMS, so it can be cut short at the deadline without losing what
+// it gathered. A cut-short call keeps its complete content blocks — text so far
+// and every search result already received — and the loop stops there. Only a
+// call with nothing usable at all fails.
+//
 // All three search routes (research, decision-makers, check-updates) and the
 // A/B harness run THIS function. That is the point: the harness measures the
 // same control flow production executes, and web-search.test.ts covers it
@@ -98,8 +107,17 @@ export const DECISION_MAKERS_DEADLINE_MS = 150_000 // maxDuration 300s
 // Structurally what the loop needs from a client. Narrower than Anthropic so a
 // test can supply a stub without a network call or an API key — the loop is our
 // control flow, and control flow should not cost $0.75 to verify.
+//
+// The SDK's MessageStream satisfies SearchStream: finalMessage() rejects once
+// abort() is called, and currentMessage is the snapshot accumulated so far.
+export type SearchStream = {
+  finalMessage(): Promise<any>                                 // eslint-disable-line @typescript-eslint/no-explicit-any
+  abort(): void
+  readonly currentMessage: any                                 // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+
 export type SearchLoopClient = {
-  messages: { create(body: any, options?: any): Promise<any> }  // eslint-disable-line @typescript-eslint/no-explicit-any
+  messages: { stream(body: any, options?: any): SearchStream }  // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 export type SearchLoopOptions = {
@@ -139,11 +157,71 @@ export type SearchLoopResult = {
   messages: { role: 'user' | 'assistant'; content: unknown }[]
   final: any                                                    // eslint-disable-line @typescript-eslint/no-explicit-any
   continuations: number
+  // False when the model never finished its turn: a call was cut short at the
+  // deadline, or the loop stopped on a pause_turn. Its closing write-up — the
+  // text findings are normally read from — was never produced, so the emit call
+  // needs the raw search results instead. See findingsForEmit.
+  complete: boolean
+}
+
+// What a call that was cut short at the deadline leaves behind.
+type CallOutcome =
+  | { kind: 'done'; message: any }                              // eslint-disable-line @typescript-eslint/no-explicit-any
+  | { kind: 'cut'; message: any; error: unknown }               // eslint-disable-line @typescript-eslint/no-explicit-any
+
+// One streamed call, aborted at the deadline. A deadline abort returns the
+// snapshot instead of throwing; any other failure (429, 5xx, network) throws as
+// before, because there is no partial result to speak of.
+async function streamCall(client: SearchLoopClient, body: unknown, budgetMs: number): Promise<CallOutcome> {
+  const stream = client.messages.stream(body)
+  let cut = false
+  const timer = setTimeout(() => { cut = true; stream.abort() }, Math.max(budgetMs, 0))
+  try {
+    return { kind: 'done', message: await stream.finalMessage() }
+  } catch (error) {
+    if (!cut) throw error
+    return { kind: 'cut', message: stream.currentMessage ?? null, error }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// The content blocks of a turn that are safe to hand back to the API.
+//
+// A streamed snapshot can end mid-block. Text is kept even if partial — it is
+// still text. A server_tool_use is kept only once its web_search_tool_result has
+// arrived (results arrive whole), because a search with no result is an
+// incomplete exchange the API rejects. Anything else — thinking blocks without
+// their signature, unknown types — is dropped.
+export function usableBlocks(content: unknown[]): any[] {      // eslint-disable-line @typescript-eslint/no-explicit-any
+  const blocks = (content ?? []) as any[]                      // eslint-disable-line @typescript-eslint/no-explicit-any
+  const answered = new Set(
+    blocks.filter(b => b?.type === 'web_search_tool_result').map(b => b.tool_use_id),
+  )
+  return blocks.filter(b =>
+    (b?.type === 'text' && typeof b.text === 'string' && b.text.trim() !== '') ||
+    (b?.type === 'server_tool_use' && answered.has(b.id)) ||
+    b?.type === 'web_search_tool_result',
+  )
+}
+
+// Usage for a call cut short. The snapshot's usage is what message_start
+// reported; the totals arrive in message_delta at the very end, which a cut
+// call never reaches. So input/output tokens here are a LOWER BOUND. The search
+// count is exact — one web_search_tool_result per billed search.
+function cutShortUsage(snapshot: any): AnthropicUsage {         // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    ...(snapshot?.usage ?? { input_tokens: 0, output_tokens: 0 }),
+    server_tool_use: {
+      web_search_requests: (snapshot?.content ?? []).filter((b: any) => b?.type === 'web_search_tool_result').length,  // eslint-disable-line @typescript-eslint/no-explicit-any
+    },
+  }
 }
 
 export async function runSearchLoop(opts: SearchLoopOptions): Promise<SearchLoopResult> {
   const now = opts.now ?? Date.now
   const startedAt = opts.startedAt ?? now()
+  const deadlineAt = startedAt + opts.deadlineMs
 
   const messages: { role: 'user' | 'assistant'; content: unknown }[] = [
     { role: 'user', content: opts.userTurn },
@@ -161,32 +239,65 @@ export async function runSearchLoop(opts: SearchLoopOptions): Promise<SearchLoop
   if (opts.thinking) body.thinking = opts.thinking
   if (opts.effort) body.output_config = { effort: opts.effort }
 
-  let response = await opts.client.messages.create({ ...body, messages })
+  // The FIRST call is the one that cannot fail safely. A non-deadline failure
+  // propagates, and so does a deadline cut that gathered nothing usable — but
+  // its usage is reported first, because a cut call was still billed.
+  const first = await streamCall(opts.client, { ...body, messages }, deadlineAt - now())
+  let response: any                                             // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (first.kind === 'cut') {
+    if (first.message) opts.onUsage?.(cutShortUsage(first.message))
+    const kept = usableBlocks(first.message?.content)
+    if (kept.length === 0) throw first.error
+    return {
+      messages,
+      final: { ...first.message, content: kept },
+      continuations: 0,
+      complete: false,
+    }
+  }
+  response = first.message
   opts.onUsage?.(response.usage)
 
   let continuations = 0
+  let complete = true
   while (
     response.stop_reason === 'pause_turn' &&
     continuations < opts.maxContinuations &&
-    now() - startedAt < opts.deadlineMs
+    now() < deadlineAt
   ) {
     continuations++
     messages.push({ role: 'assistant', content: response.content })
 
     // Continuations are best-effort enrichment, not all-or-nothing. A rep who
     // waited two minutes deserves a thinner brief, not an error — so a failed
-    // continuation keeps what was gathered and stops.
-    let next
+    // or cut-short continuation keeps what was gathered and stops.
+    //
+    // When it yields nothing new, the turn just pushed is un-pushed: it stays
+    // `final`, and leaving it in `messages` too would compose it twice.
+    let next: CallOutcome
     try {
-      next = await opts.client.messages.create({ ...body, messages })
+      next = await streamCall(opts.client, { ...body, messages }, deadlineAt - now())
     } catch {
+      messages.pop()
       break
     }
-    response = next
+    if (next.kind === 'cut') {
+      complete = false
+      if (next.message) opts.onUsage?.(cutShortUsage(next.message))
+      const kept = usableBlocks(next.message?.content)
+      if (kept.length > 0) response = { ...next.message, content: kept }
+      else messages.pop()
+      break
+    }
+    response = next.message
     opts.onUsage?.(response.usage)
   }
 
-  return { messages, final: response, continuations }
+  // Stopped while the model still wanted to continue — capped by count or by
+  // the deadline check above. Its write-up was never produced either.
+  if (response.stop_reason === 'pause_turn') complete = false
+
+  return { messages, final: response, continuations, complete }
 }
 
 // Text from every assistant turn, in order — the ONE way findings are composed.
@@ -208,4 +319,36 @@ export function findingsFromAllTurns(result: SearchLoopResult): string {
     .map(b => (typeof b === 'object' && b !== null && 'type' in b && (b as any).type === 'text' ? (b as { text: string }).text : ''))  // eslint-disable-line @typescript-eslint/no-explicit-any
   const last = (result.final.content ?? []).map((b: any) => (b.type === 'text' ? b.text : ''))  // eslint-disable-line @typescript-eslint/no-explicit-any
   return [...earlier, ...last].filter(Boolean).join('\n').trim()
+}
+
+// The assistant turn handed to the emit call, plus any tool declarations that
+// turn needs.
+//
+// Complete run: the findings TEXT, exactly as before. The model's closing
+// write-up already distils every search, and re-sending raw results would
+// multiply the emit call's input for nothing.
+//
+// Incomplete run: the write-up was never produced. Between searches the model
+// writes little more than "Let me look for X", so the text alone is close to
+// empty — composing from it would produce a brief that looks normal and says
+// nothing. The search results themselves are what was paid for, so the emit
+// call gets the usable content blocks of every turn. Those include
+// server_tool_use blocks, which is why web_search is declared alongside them;
+// the emit call's forced tool_choice means it cannot actually search.
+export function findingsForEmit(
+  result: SearchLoopResult,
+  fallback: string,
+): { content: string | any[]; tools: object[] } {             // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (result.complete) {
+    return { content: findingsFromAllTurns(result) || fallback, tools: [] }
+  }
+  const blocks = usableBlocks([
+    ...result.messages
+      .filter(m => m.role === 'assistant')
+      .flatMap(m => (Array.isArray(m.content) ? m.content : [])),
+    ...(result.final.content ?? []),
+  ])
+  return blocks.length > 0
+    ? { content: blocks, tools: [webSearchTool()] }
+    : { content: fallback, tools: [] }
 }

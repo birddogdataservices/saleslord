@@ -6,7 +6,7 @@ import { buildSystemPrompt } from '@/lib/research-prompt'
 import {
   RESEARCH_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
-  runSearchLoop, findingsFromAllTurns, type SearchLoopResult,
+  runSearchLoop, findingsForEmit, type SearchLoopResult,
 } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
@@ -116,17 +116,39 @@ async function run(request: Request): Promise<Response> {
   let cacheWriteTokens  = 0
   let webSearchRequests = 0
 
+  // Usage is logged on EVERY exit past this point, failures included — the
+  // tokens and searches were billed to the rep's key whether or not a brief
+  // came out of them. cost_usd in the error body is what withJob stamps on the
+  // failed job row.
+  const logRun = (prospectId: string | null) => logUsage(adminClient, {
+    userId:       user.id,
+    prospectId,
+    endpoint:     USAGE_ENDPOINT.RESEARCH,
+    model:        MODEL,
+    inputTokens:  totalInputTokens,
+    outputTokens: totalOutputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    webSearchRequests,
+  })
+  const fail = async (error: string, status: number, prospectId: string | null = null) => {
+    const spent = totalInputTokens + totalOutputTokens + cacheReadTokens + cacheWriteTokens + webSearchRequests > 0
+    const cost = spent ? await logRun(prospectId) : 0
+    return Response.json({ error, cost_usd: cost }, { status })
+  }
+
   // The pause_turn continuation loop lives in lib/web-search.ts — one tested
   // copy, shared by the three search routes and the A/B harness. It owns the
   // cache_control prefix, the tool declaration, and both guards (continuation
   // count AND wall clock, because counting continuations does not bound time).
-  // A continuation that fails is swallowed there, keeping what was gathered.
+  // A continuation that fails is swallowed there, keeping what was gathered,
+  // and a call still running at the deadline is cut short keeping its results.
   //
-  // The FIRST call is the one that cannot fail safely — with no findings there
-  // is nothing to compose a brief from — and runSearchLoop deliberately lets
-  // that one propagate. Catching it here turns it into a clear 504 instead of a
-  // raw 500, because a rep who waited two minutes deserves to know what happened
-  // and that their existing brief is untouched.
+  // The FIRST call failing outright, or being cut short before it gathered
+  // anything, is the one case with nothing to compose a brief from, and
+  // runSearchLoop deliberately lets it propagate. Catching it here turns it
+  // into a clear 504 instead of a raw 500, because a rep who waited deserves to
+  // know what happened and that their existing brief is untouched.
   const MAX_CONTINUATIONS = 6
   let loop: SearchLoopResult
   try {
@@ -146,10 +168,7 @@ async function run(request: Request): Promise<Response> {
     })
   } catch (err) {
     console.error('[research] Initial search call failed:', err instanceof Error ? err.message : err)
-    return Response.json(
-      { error: 'Research timed out before it could gather anything. Your existing brief is unchanged — please try again.' },
-      { status: 504 },
-    )
+    return fail('Research timed out before it could gather anything. Your existing brief is unchanged — please try again.', 504)
   }
 
   // Loop telemetry — free to collect, and both numbers answer open questions.
@@ -159,7 +178,10 @@ async function run(request: Request): Promise<Response> {
   // trigger it.
   // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
   // api_usage.web_search_requests and priced into cost_usd by logUsage below.
-  console.log(`[research] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd)`)
+  // complete=false: the model never wrote its closing summary (cut short at the
+  // deadline, or stopped mid-pause_turn), so the brief is composed from the raw
+  // search results — see findingsForEmit.
+  console.log(`[research] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd), complete=${loop.complete}`)
 
   // 6. Compose the brief as guaranteed-valid JSON via tool use (phase 2).
   // The web-search loop above can't ALSO be forced to emit a tool (forcing it would
@@ -169,7 +191,7 @@ async function run(request: Request): Promise<Response> {
   //
   // Findings accumulate across every assistant turn, not just the last one —
   // when a continuation is cut short the earlier turns are all we have.
-  const findings = findingsFromAllTurns(loop)
+  const findings = findingsForEmit(loop, '(research gathered)')
 
   let parsed: any
   try {
@@ -177,21 +199,22 @@ async function run(request: Request): Promise<Response> {
       client, model: MODEL, system: systemPrompt,
       messages: [
         { role: 'user', content: userTurn },
-        { role: 'assistant', content: findings || '(research gathered)' },
+        { role: 'assistant', content: findings.content },
         { role: 'user', content: 'Now output the complete brief exactly as specified above, by calling the emit_result tool with the JSON object.' },
       ],
       maxTokens: 8192,   // brief JSON was landing within ~10% of the old 4096 cap
       cache: true,   // same system prompt as the search loop — reads its cache
       timeoutMs: EMIT_TIMEOUT_MS,
+      historyTools: findings.tools,
     })
     parsed = structured.value
     totalInputTokens  += structured.inputTokens
     totalOutputTokens += structured.outputTokens
     cacheReadTokens   += structured.cacheReadTokens
     cacheWriteTokens  += structured.cacheWriteTokens
-  } catch {
-    console.error('[research] Structured brief generation failed')
-    return Response.json({ error: 'Failed to generate brief' }, { status: 500 })
+  } catch (err) {
+    console.error('[research] Structured brief generation failed:', err instanceof Error ? err.message : err)
+    return fail('Failed to generate brief', 500)
   }
 
   // 7. Sort news descending (source of truth is DB order — never re-sort client-side)
@@ -213,7 +236,7 @@ async function run(request: Request): Promise<Response> {
 
   if (prospectError || !prospect) {
     console.error('[research] Prospect upsert error:', prospectError)
-    return Response.json({ error: 'Failed to save prospect' }, { status: 500 })
+    return fail('Failed to save prospect', 500)
   }
 
   // Insert new brief FIRST — if the process dies before the old one is deleted,
@@ -241,7 +264,7 @@ async function run(request: Request): Promise<Response> {
 
   if (briefError || !brief) {
     console.error('[research] Brief insert error:', briefError)
-    return Response.json({ error: 'Failed to save brief' }, { status: 500 })
+    return fail('Failed to save brief', 500, prospect.id)
   }
 
   // Now delete any older briefs for this prospect (keep only the one we just inserted)
@@ -262,17 +285,7 @@ async function run(request: Request): Promise<Response> {
     .eq('id', prospect.id)
 
   // 9. Log cost
-  const cost = await logUsage(adminClient, {
-    userId:       user.id,
-    prospectId:   prospect.id,
-    endpoint:     USAGE_ENDPOINT.RESEARCH,
-    model:        MODEL,
-    inputTokens:  totalInputTokens,
-    outputTokens: totalOutputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    webSearchRequests,
-  })
+  const cost = await logRun(prospect.id)
 
   // 10. Return
   return Response.json({

@@ -11,7 +11,7 @@ import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import {
   CHECK_UPDATES_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
-  runSearchLoop, findingsFromAllTurns,
+  runSearchLoop, findingsForEmit, type SearchLoopResult,
 } from '@/lib/web-search'
 import { decryptApiKey } from '@/lib/crypto'
 import { withJob } from '@/lib/jobs'
@@ -211,71 +211,10 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
   let cacheWriteTokens  = 0
   let webSearchRequests = 0
 
-  // Search loop — lib/web-search.ts owns it, shared with research,
-  // decision-makers and the A/B harness. It handles pause_turn (web search is a
-  // SERVER-side tool, so searches run inside a single API call and stop_reason
-  // is never 'tool_use'), sends cache_control so each continuation and the
-  // phase-2 emit call below re-read the prefix at ~0.1x, and bounds the run by
-  // both a continuation count and a wall clock.
-  //
-  // max_tokens stays at 1024 here: this route asks "what changed", not for a
-  // brief, and the emit call is what produces the output the rep reads.
-  const MAX_CONTINUATIONS = 4  // check-updates is narrower than research
-  const loop = await runSearchLoop({
-    client, model: MODEL, system: systemPrompt, userTurn: userMessage,
-    maxTokens: 1024,
-    maxContinuations: MAX_CONTINUATIONS,
-    deadlineMs: CHECK_UPDATES_DEADLINE_MS,
-    startedAt,
-    onUsage: u => {
-      totalInputTokens  += u.input_tokens
-      totalOutputTokens += u.output_tokens
-      cacheReadTokens   += u.cache_read_input_tokens ?? 0
-      cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
-      webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
-    },
-  })
-
-  // Loop telemetry — free to collect, and both numbers answer open questions.
-  // continuations: MODEL-UPGRADES.md records the pause_turn path as never having
-  // been exercised by a live run. Logging it turns every real brief into evidence,
-  // instead of spending ~$0.75 a time hunting for a prospect heavy enough to
-  // trigger it.
-  // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
-  // api_usage.web_search_requests and priced into cost_usd by logUsage below.
-  console.log(`[check-updates] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd)`)
-
-  // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
-  // The web-search loop can't also be forced to emit a tool, so this dedicated call
-  // hands the model its own findings and has it return the result through emit_result
-  // (either {"found": false} or the full object). No text parsing, any language.
-  const findings = findingsFromAllTurns(loop)
-
-  let parsed: { found: boolean; summary?: string; news_items?: NewsItem[] }
-  try {
-    const structured = await generateStructured({
-      client, model: MODEL, system: systemPrompt,
-      messages: [
-        { role: 'user', content: userMessage },
-        { role: 'assistant', content: findings || '(search complete)' },
-        { role: 'user', content: 'Now return the result exactly as specified above (either {"found": false} or the full object), by calling the emit_result tool.' },
-      ],
-      maxTokens: 2048,
-      cache: true,   // same system prompt as the search loop — reads its cache
-      timeoutMs: EMIT_TIMEOUT_MS,
-    })
-    parsed = structured.value as typeof parsed
-    totalInputTokens  += structured.inputTokens
-    totalOutputTokens += structured.outputTokens
-    cacheReadTokens   += structured.cacheReadTokens
-    cacheWriteTokens  += structured.cacheWriteTokens
-  } catch {
-    console.error('[check-updates] Structured generation failed')
-    return Response.json({ error: 'Failed to generate update' }, { status: 500 })
-  }
-
-  // 9. Log cost regardless of whether updates were found (we used compute either way)
-  const cost = await logUsage(adminClient, {
+  // Usage is logged on EVERY exit past this point, failures included — the
+  // tokens and searches were billed to the rep's key whether or not anything
+  // new turned up. cost_usd in the error body is what withJob stamps on the job.
+  const logRun = () => logUsage(adminClient, {
     userId:       user.id,
     prospectId:   prospect_id,
     endpoint:     USAGE_ENDPOINT.CHECK_UPDATES,
@@ -286,6 +225,88 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
     cacheWriteTokens,
     webSearchRequests,
   })
+  const fail = async (error: string, status: number) => {
+    const spent = totalInputTokens + totalOutputTokens + cacheReadTokens + cacheWriteTokens + webSearchRequests > 0
+    const cost = spent ? await logRun() : 0
+    return Response.json({ error, cost_usd: cost }, { status })
+  }
+
+  // Search loop — lib/web-search.ts owns it, shared with research,
+  // decision-makers and the A/B harness. It handles pause_turn (web search is a
+  // SERVER-side tool, so searches run inside a single API call and stop_reason
+  // is never 'tool_use'), sends cache_control so each continuation and the
+  // phase-2 emit call below re-read the prefix at ~0.1x, and bounds the run by
+  // both a continuation count and a wall clock.
+  //
+  // max_tokens stays at 1024 here: this route asks "what changed", not for a
+  // brief, and the emit call is what produces the output the rep reads.
+  //
+  // The first call failing outright, or being cut short at the deadline before
+  // it gathered anything, propagates — there is nothing to compose from.
+  const MAX_CONTINUATIONS = 4  // check-updates is narrower than research
+  let loop: SearchLoopResult
+  try {
+    loop = await runSearchLoop({
+      client, model: MODEL, system: systemPrompt, userTurn: userMessage,
+      maxTokens: 1024,
+      maxContinuations: MAX_CONTINUATIONS,
+      deadlineMs: CHECK_UPDATES_DEADLINE_MS,
+      startedAt,
+      onUsage: u => {
+        totalInputTokens  += u.input_tokens
+        totalOutputTokens += u.output_tokens
+        cacheReadTokens   += u.cache_read_input_tokens ?? 0
+        cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+        webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
+      },
+    })
+  } catch (err) {
+    console.error('[check-updates] Initial search call failed:', err instanceof Error ? err.message : err)
+    return fail('The update check timed out before it found anything. Your brief is unchanged — please try again.', 504)
+  }
+
+  // Loop telemetry — free to collect, and both numbers answer open questions.
+  // continuations: MODEL-UPGRADES.md records the pause_turn path as never having
+  // been exercised by a live run. Logging it turns every real brief into evidence,
+  // instead of spending ~$0.75 a time hunting for a prospect heavy enough to
+  // trigger it.
+  // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
+  // api_usage.web_search_requests and priced into cost_usd by logUsage below.
+  console.log(`[check-updates] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd), complete=${loop.complete}`)
+
+  // 8. Emit the result as guaranteed-valid JSON via tool use (phase 2).
+  // The web-search loop can't also be forced to emit a tool, so this dedicated call
+  // hands the model its own findings and has it return the result through emit_result
+  // (either {"found": false} or the full object). No text parsing, any language.
+  // An incomplete loop hands over the raw search results — see findingsForEmit.
+  const findings = findingsForEmit(loop, '(search complete)')
+
+  let parsed: { found: boolean; summary?: string; news_items?: NewsItem[] }
+  try {
+    const structured = await generateStructured({
+      client, model: MODEL, system: systemPrompt,
+      messages: [
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: findings.content },
+        { role: 'user', content: 'Now return the result exactly as specified above (either {"found": false} or the full object), by calling the emit_result tool.' },
+      ],
+      maxTokens: 2048,
+      cache: true,   // same system prompt as the search loop — reads its cache
+      timeoutMs: EMIT_TIMEOUT_MS,
+      historyTools: findings.tools,
+    })
+    parsed =structured.value as typeof parsed
+    totalInputTokens  += structured.inputTokens
+    totalOutputTokens += structured.outputTokens
+    cacheReadTokens   += structured.cacheReadTokens
+    cacheWriteTokens  += structured.cacheWriteTokens
+  } catch (err) {
+    console.error('[check-updates] Structured generation failed:', err instanceof Error ? err.message : err)
+    return fail('Failed to generate update', 500)
+  }
+
+  // 9. Log cost regardless of whether updates were found (we used compute either way)
+  const cost = await logRun()
 
   // 10. If no relevant updates, return early — no blurb written. Still stamp
   // last_checked_at: "we looked and there was nothing new" is worth knowing,

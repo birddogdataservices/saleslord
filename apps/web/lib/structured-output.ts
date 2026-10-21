@@ -59,6 +59,10 @@ export async function generateStructured(args: {
   // your own A/B".
   thinking?: { type: 'disabled' } | { type: 'adaptive' }
   effort?: 'low' | 'medium' | 'high' | 'xhigh'
+  // Tools the conversation history refers to, declared so the API accepts it —
+  // findingsForEmit's search results carry server_tool_use blocks. tool_choice
+  // still forces emit_result, so none of these can actually be called.
+  historyTools?: object[]
 }): Promise<StructuredResult> {
   const res = await args.client.messages.create({
     model:      args.model,
@@ -67,7 +71,7 @@ export async function generateStructured(args: {
     ...(args.cache ? { cache_control: { type: 'ephemeral' as const } } : {}),
     ...(args.thinking ? { thinking: args.thinking } : {}),
     ...(args.effort ? { output_config: { effort: args.effort } } : {}),
-    tools:      [EMIT_TOOL] as any,
+    tools:      [EMIT_TOOL, ...(args.historyTools ?? [])] as any,
     tool_choice: { type: 'tool', name: EMIT_TOOL.name } as any,
     messages:   args.messages,
   } as any, args.timeoutMs ? { timeout: args.timeoutMs } : undefined)

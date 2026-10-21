@@ -16,7 +16,7 @@ import { buildDecisionMakersPrompt, type RawDecisionMaker } from '@/lib/decision
 import {
   DECISION_MAKERS_DEADLINE_MS, EMIT_TIMEOUT_MS,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
-  runSearchLoop, findingsFromAllTurns,
+  runSearchLoop, findingsForEmit, type SearchLoopResult,
 } from '@/lib/web-search'
 import { withJob } from '@/lib/jobs'
 import { languageDirective, JSON_LANGUAGE_RULE } from '@/lib/i18n/languages'
@@ -105,6 +105,26 @@ async function run(request: Request): Promise<Response> {
   let cacheWriteTokens  = 0
   let webSearchRequests = 0
 
+  // Usage is logged on EVERY exit past this point, failures included — the
+  // tokens and searches were billed to the rep's key whether or not anyone was
+  // found. cost_usd in the error body is what withJob stamps on the job row.
+  const logRun = () => logUsage(adminClient, {
+    userId:       user.id,
+    prospectId:   prospect_id,
+    endpoint:     USAGE_ENDPOINT.DECISION_MAKERS,
+    model:        MODEL,
+    inputTokens:  totalInputTokens,
+    outputTokens: totalOutputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    webSearchRequests,
+  })
+  const fail = async (error: string, status: number) => {
+    const spent = totalInputTokens + totalOutputTokens + cacheReadTokens + cacheWriteTokens + webSearchRequests > 0
+    const cost = spent ? await logRun() : 0
+    return Response.json({ error, cost_usd: cost }, { status })
+  }
+
   // 6. Search loop — lib/web-search.ts owns it, shared with research,
   // check-updates and the A/B harness. It handles pause_turn (web search runs
   // inside a single API call, so stop_reason is never 'tool_use'), caches the
@@ -113,21 +133,30 @@ async function run(request: Request): Promise<Response> {
   //
   // maxContinuations is lower than research's 6 — this stage searches narrowly
   // and should finish well inside its maxDuration.
+  //
+  // The first call failing outright, or being cut short at the deadline before
+  // it gathered anything, propagates — there is nothing to compose from.
   const MAX_CONTINUATIONS = 4
-  const loop = await runSearchLoop({
-    client, model: MODEL, system: systemPrompt, userTurn,
-    maxTokens: 4096,
-    maxContinuations: MAX_CONTINUATIONS,
-    deadlineMs: DECISION_MAKERS_DEADLINE_MS,
-    startedAt,
-    onUsage: u => {
-      totalInputTokens  += u.input_tokens
-      totalOutputTokens += u.output_tokens
-      cacheReadTokens   += u.cache_read_input_tokens ?? 0
-      cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
-      webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
-    },
-  })
+  let loop: SearchLoopResult
+  try {
+    loop = await runSearchLoop({
+      client, model: MODEL, system: systemPrompt, userTurn,
+      maxTokens: 4096,
+      maxContinuations: MAX_CONTINUATIONS,
+      deadlineMs: DECISION_MAKERS_DEADLINE_MS,
+      startedAt,
+      onUsage: u => {
+        totalInputTokens  += u.input_tokens
+        totalOutputTokens += u.output_tokens
+        cacheReadTokens   += u.cache_read_input_tokens ?? 0
+        cacheWriteTokens  += u.cache_creation_input_tokens ?? 0
+        webSearchRequests += u.server_tool_use?.web_search_requests ?? 0
+      },
+    })
+  } catch (err) {
+    console.error('[decision-makers] Initial search call failed:', err instanceof Error ? err.message : err)
+    return fail('The search timed out before it found anything. Existing decision makers are unchanged — please try again.', 504)
+  }
 
   // Loop telemetry — free to collect, and both numbers answer open questions.
   // continuations: MODEL-UPGRADES.md records the pause_turn path as never having
@@ -136,11 +165,12 @@ async function run(request: Request): Promise<Response> {
   // trigger it.
   // web searches: billed at $10 per 1,000 on top of tokens. Recorded in
   // api_usage.web_search_requests and priced into cost_usd by logUsage below.
-  console.log(`[decision-makers] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd)`)
+  console.log(`[decision-makers] search loop: ${loop.continuations} continuation(s), ${webSearchRequests} web search(es) (+$${(webSearchRequests * WEB_SEARCH_COST_PER_REQUEST).toFixed(2)} in cost_usd), complete=${loop.complete}`)
 
   // 7. Emit as guaranteed-valid JSON via tool use (phase 2), same two-phase
   // pattern as research — the search call cannot also be forced to emit a tool.
-  const findings = findingsFromAllTurns(loop)
+  // An incomplete loop hands over the raw search results — see findingsForEmit.
+  const findings = findingsForEmit(loop, '(research gathered)')
 
   let raw: RawDecisionMaker[]
   try {
@@ -148,21 +178,22 @@ async function run(request: Request): Promise<Response> {
       client, model: MODEL, system: systemPrompt,
       messages: [
         { role: 'user', content: userTurn },
-        { role: 'assistant', content: findings || '(research gathered)' },
+        { role: 'assistant', content: findings.content },
         { role: 'user', content: 'Now output the decision makers exactly as specified above, by calling the emit_result tool with the JSON object. Return an empty array if you could not source anyone.' },
       ],
       maxTokens: 4096,
       cache: true,   // same system prompt as the search loop — reads its cache
       timeoutMs: EMIT_TIMEOUT_MS,
+      historyTools: findings.tools,
     })
-    raw = (structured.value as { decision_makers?: RawDecisionMaker[] }).decision_makers ?? []
+    raw =(structured.value as { decision_makers?: RawDecisionMaker[] }).decision_makers ?? []
     totalInputTokens  += structured.inputTokens
     totalOutputTokens += structured.outputTokens
     cacheReadTokens   += structured.cacheReadTokens
     cacheWriteTokens  += structured.cacheWriteTokens
-  } catch {
-    console.error('[decision-makers] Structured generation failed')
-    return Response.json({ error: 'Failed to identify decision makers' }, { status: 500 })
+  } catch (err) {
+    console.error('[decision-makers] Structured generation failed:', err instanceof Error ? err.message : err)
+    return fail('Failed to identify decision makers', 500)
   }
 
   // 8. Map to rows. An empty result is a legitimate outcome, not an error —
@@ -202,7 +233,7 @@ async function run(request: Request): Promise<Response> {
     const { error: insertError } = await adminClient.from('decision_makers').insert(rows)
     if (insertError) {
       console.error('[decision-makers] Insert error:', insertError)
-      return Response.json({ error: 'Failed to save decision makers' }, { status: 500 })
+      return fail('Failed to save decision makers', 500)
     }
   }
   if (existingIds.length > 0) {
@@ -218,17 +249,7 @@ async function run(request: Request): Promise<Response> {
     .eq('id', prospect_id)
 
   // 11. Log cost
-  const cost = await logUsage(adminClient, {
-    userId:       user.id,
-    prospectId:   prospect_id,
-    endpoint:     USAGE_ENDPOINT.DECISION_MAKERS,
-    model:        MODEL,
-    inputTokens:  totalInputTokens,
-    outputTokens: totalOutputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    webSearchRequests,
-  })
+  const cost = await logRun()
 
   return Response.json({ decision_makers: rows, found: rows.length, cost_usd: cost })
 }
