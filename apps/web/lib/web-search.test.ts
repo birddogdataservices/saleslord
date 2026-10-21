@@ -22,7 +22,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runSearchLoop, findingsFromAllTurns, findingsForEmit, type SearchLoopClient } from './web-search'
+import { runSearchLoop, findingsFromAllTurns, findingsForEmit, emitTimeoutMs, ROUTE_BUDGET_MS, RESEARCH_DEADLINE_MS, type SearchLoopClient } from './web-search'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stub client
@@ -377,4 +377,23 @@ test('passes thinking and effort through when set, and omits them when not', asy
   await runSearchLoop({ ...base, client: b.client })
   assert.ok(!('thinking' in b.bodies[0]))
   assert.ok(!('output_config' in b.bodies[0]))
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emit budget
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('the emit call gets whatever the route budget has left', () => {
+  // Lockheed Martin, 2026-10-21: search done at ~111s, then a fixed 60s emit
+  // timeout killed a brief that needed longer. It now gets the remaining ~169s.
+  assert.equal(emitTimeoutMs(0, () => 111_000), ROUTE_BUDGET_MS - 111_000)
+})
+
+test('research always leaves the emit call at least 110s', () => {
+  // A full brief is up to 8192 output tokens — roughly 60–120s from Sonnet.
+  assert.ok(emitTimeoutMs(0, () => RESEARCH_DEADLINE_MS) >= 110_000)
+})
+
+test('the emit timeout never goes to zero or negative', () => {
+  assert.equal(emitTimeoutMs(0, () => ROUTE_BUDGET_MS + 50_000), 1_000)
 })

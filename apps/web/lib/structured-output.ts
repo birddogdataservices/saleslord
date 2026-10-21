@@ -46,9 +46,9 @@ export async function generateStructured(args: {
   messages: Anthropic.MessageParam[]
   maxTokens?: number
   cache?: boolean
-  // Per-request override. This call does no searching, so it should be held to
-  // a much shorter leash than the search calls that precede it — otherwise a
-  // slow emit eats the headroom the route deadline reserved for it.
+  // Per-request override. The web-search routes pass emitTimeoutMs — whatever
+  // their route budget has left after searching — so a long write-up can use
+  // the time a fast search saved without running past maxDuration.
   timeoutMs?: number
   // Model posture, passed straight through. No route sets these — production runs
   // Sonnet 4.6 at its defaults, so both are undefined and the request body is

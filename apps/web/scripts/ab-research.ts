@@ -49,7 +49,7 @@ import { buildProductsBlock, type ProductForPrompt } from '../lib/prospect-conte
 import { generateStructured } from '../lib/structured-output'
 import { languageDirective, JSON_LANGUAGE_RULE } from '../lib/i18n/languages'
 import {
-  ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, EMIT_TIMEOUT_MS,
+  ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES, emitTimeoutMs,
   RESEARCH_DEADLINE_MS, DECISION_MAKERS_DEADLINE_MS,
   runSearchLoop, findingsForEmit,
 } from '../lib/web-search'
@@ -290,7 +290,7 @@ async function runStage1(client: Anthropic, cfg: Config, ctx: RepContext, query:
       ],
       maxTokens: 8192,
       cache: true,
-      timeoutMs: EMIT_TIMEOUT_MS,
+      timeoutMs: emitTimeoutMs(startedAt),
       historyTools: findings.tools,
       thinking: cfg.thinking,
       effort: cfg.effort,
@@ -385,7 +385,7 @@ async function runStage2(client: Anthropic, cfg: Config, ctx: RepContext, g: Gro
       ],
       maxTokens: 4096,
       cache: true,
-      timeoutMs: EMIT_TIMEOUT_MS,
+      timeoutMs: emitTimeoutMs(startedAt),
       historyTools: findings.tools,
       thinking: cfg.thinking,
       effort: cfg.effort,

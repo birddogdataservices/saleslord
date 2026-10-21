@@ -9,7 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import {
-  CHECK_UPDATES_DEADLINE_MS, EMIT_TIMEOUT_MS,
+  CHECK_UPDATES_DEADLINE_MS, emitTimeoutMs,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
   runSearchLoop, findingsForEmit, type SearchLoopResult,
 } from '@/lib/web-search'
@@ -292,7 +292,7 @@ Search for developments at ${prospect.name} that occurred after ${lastCheckedLab
       ],
       maxTokens: 2048,
       cache: true,   // same system prompt as the search loop — reads its cache
-      timeoutMs: EMIT_TIMEOUT_MS,
+      timeoutMs: emitTimeoutMs(startedAt),
       historyTools: findings.tools,
     })
     parsed =structured.value as typeof parsed

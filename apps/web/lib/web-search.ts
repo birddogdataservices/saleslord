@@ -54,7 +54,7 @@ export function webSearchTool() {
 // only — it bounds the wait for response headers, not the stream — so for the
 // search calls it is a connection guard and the deadline does the real work.
 // On non-streamed calls it is the whole-call ceiling (generateStructured
-// overrides it with EMIT_TIMEOUT_MS). The SDK default is 10 minutes.
+// overrides it with emitTimeoutMs). The SDK default is 10 minutes.
 export const ANTHROPIC_TIMEOUT_MS = 120_000
 
 // Zero retries, deliberately. The SDK retries timeouts, and retrying a call
@@ -63,20 +63,31 @@ export const ANTHROPIC_TIMEOUT_MS = 120_000
 // Retries earn their keep on fast failures (429, 5xx), not on these.
 export const ANTHROPIC_MAX_RETRIES = 0
 
-// The phase-2 emit call does no searching — it reformats findings the model
-// already holds — so it gets a much shorter leash. Keeping it separate is what
-// lets the search budget stay generous without risking the ceiling.
-export const EMIT_TIMEOUT_MS = 60_000
+// Whole-route budget for the Anthropic work: every search route has
+// vercel.json maxDuration 300s, less ~20s for setup reads and the writes after
+// the emit call.
+export const ROUTE_BUDGET_MS = 280_000
 
 // Search-phase wall clock: no continuation starts past it, and a call still
-// streaming when it arrives is cut short. Each sits under its route's
-// vercel.json maxDuration with room for the emit call and the writes after it.
+// streaming when it arrives is cut short. Whatever the search leaves of
+// ROUTE_BUDGET_MS goes to the emit call — so each deadline is really the split
+// between gathering and writing up.
 //
-// Worst case for research: search phase ends at 200s, emit 60s → ~260s against
-// a 300s limit.
-export const RESEARCH_DEADLINE_MS = 200_000        // maxDuration 300s
-export const CHECK_UPDATES_DEADLINE_MS = 200_000   // maxDuration 300s
-export const DECISION_MAKERS_DEADLINE_MS = 150_000 // maxDuration 300s
+// The emit call's time is OUTPUT-bound: a full research brief runs up to 8192
+// tokens, roughly 60–120s from Sonnet. Research therefore stops searching at
+// 170s, guaranteeing the emit ≥110s. History: a fixed 60s emit timeout failed
+// Lockheed Martin on 2026-10-21 — search done at ~111s, brief still writing at
+// 60s — while ~170s of the route sat unused.
+export const RESEARCH_DEADLINE_MS = 170_000        // emit ≥110s, up to 8192 tokens
+export const CHECK_UPDATES_DEADLINE_MS = 200_000   // emit ≥80s, up to 2048 tokens
+export const DECISION_MAKERS_DEADLINE_MS = 150_000 // emit ≥130s, up to 4096 tokens
+
+// The emit call's timeout: everything the route budget has left. A fixed
+// timeout either wastes the time a fast search saved or, sized for the worst
+// case, could not be trusted to fit under maxDuration after a slow one.
+export function emitTimeoutMs(startedAt: number, now: () => number = Date.now): number {
+  return Math.max(ROUTE_BUDGET_MS - (now() - startedAt), 1_000)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The continuation loop

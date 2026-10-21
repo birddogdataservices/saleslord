@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { checkDailyLimit, logUsage, USAGE_ENDPOINT } from '@/lib/api-usage'
 import { buildSystemPrompt } from '@/lib/research-prompt'
 import {
-  RESEARCH_DEADLINE_MS, EMIT_TIMEOUT_MS,
+  RESEARCH_DEADLINE_MS, emitTimeoutMs,
   ANTHROPIC_TIMEOUT_MS, ANTHROPIC_MAX_RETRIES,
   runSearchLoop, findingsForEmit, type SearchLoopResult,
 } from '@/lib/web-search'
@@ -204,7 +204,7 @@ async function run(request: Request): Promise<Response> {
       ],
       maxTokens: 8192,   // brief JSON was landing within ~10% of the old 4096 cap
       cache: true,   // same system prompt as the search loop — reads its cache
-      timeoutMs: EMIT_TIMEOUT_MS,
+      timeoutMs: emitTimeoutMs(startedAt),
       historyTools: findings.tools,
     })
     parsed = structured.value
